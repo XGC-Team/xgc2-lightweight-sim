@@ -41,10 +41,10 @@ release:
   workflow: release.yml
   ci_workflow: ci.yml
   requires:
-  - libxgc-runtime-sdk-dev
+  - libxgc2-runtime-sdk-dev
   - libxgc2-math-dev
   dependency_policy:
-    libxgc-runtime-sdk-dev: rebuild
+    libxgc2-runtime-sdk-dev: rebuild
     libxgc2-math-dev: verify
   apt_versions:
     focal: 0.3.0-1

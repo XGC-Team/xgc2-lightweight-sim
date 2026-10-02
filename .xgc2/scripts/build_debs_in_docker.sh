@@ -70,11 +70,11 @@ docker run --rm \
       echo "deb [signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] ${XGC2_APT_OVERLAY_URL%/} focal main" >/etc/apt/sources.list.d/00-xgc2-release-train.list
     fi
     apt-get update
-    apt-get install -y --no-install-recommends libxgc-runtime-sdk-dev libxgc2-math-dev
+    apt-get install -y --no-install-recommends libxgc2-runtime-sdk-dev libxgc2-math-dev
     test -f /usr/include/xgc-runtime/xgc_rt.h
     test -f /usr/share/cmake/XgcRuntimeSDK/XgcRuntimeSDKConfig.cmake
     dpkg-query -S /usr/include/xgc-runtime/xgc_rt.h /usr/share/cmake/XgcRuntimeSDK/XgcRuntimeSDKConfig.cmake
-    dpkg --compare-versions "$(dpkg-query -W -f="\${Version}" libxgc-runtime-sdk-dev)" ge 0.1.0-1~focal
+    dpkg --compare-versions "$(dpkg-query -W -f="\${Version}" libxgc2-runtime-sdk-dev)" ge 0.1.0-1~focal
     cmake -S "$source" -B /workspace/work/native \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
       -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_DATADIR=share \
