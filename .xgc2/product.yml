@@ -1,0 +1,50 @@
+schema: xgc2.product.v1
+id: xgc2-lightweight-sim
+name: XGC2 Lightweight Simulator
+version: 0.3.0-1
+kind: ros1-apt
+summary: Independent native rigid-body and FCU simulator with its minimal ROS1 lifecycle interface.
+ros:
+  distro: noetic
+  packages:
+  - xgc2_lightweight_sim_msgs
+apt:
+  distribution: focal
+  install:
+  - xgc2-lightweight-sim
+  - ros-noetic-xgc2-lightweight-sim-msgs
+  packages:
+  - xgc2-lightweight-sim
+  - ros-noetic-xgc2-lightweight-sim-msgs
+  package_architectures:
+    ros-noetic-xgc2-lightweight-sim-msgs:
+    - all
+  depends:
+  - ros-noetic-message-runtime
+usage:
+  install: sudo apt install xgc2-lightweight-sim ros-noetic-xgc2-lightweight-sim-msgs
+  smoke_test: test -f /usr/lib/xgc2-lightweight-sim/liblightweight_vehicle.so
+  notes: The native model has no ROS or SSS runtime dependency. FS150 build inputs are immutable owner bytes pinned by .xgc2/build-inputs/fs150.lock.json.
+ownership:
+  paths:
+  - /usr/lib/xgc2-lightweight-sim
+  - /usr/share/xgc2-lightweight-sim
+  - /opt/ros/noetic/share/xgc2_lightweight_sim_msgs
+  - /opt/ros/noetic/include/xgc2_lightweight_sim_msgs
+  - /opt/ros/noetic/lib/python3/dist-packages/xgc2_lightweight_sim_msgs
+  - /opt/ros/noetic/share/common-lisp/ros/xgc2_lightweight_sim_msgs
+  - /opt/ros/noetic/share/gennodejs/ros/xgc2_lightweight_sim_msgs
+  - /opt/ros/noetic/share/roseus/ros/xgc2_lightweight_sim_msgs
+release:
+  repository: XGC-Team/xgc2-lightweight-sim
+  ref: main
+  workflow: release.yml
+  ci_workflow: ci.yml
+  requires:
+  - libxgc-runtime-sdk-dev
+  - libxgc2-math-dev
+  dependency_policy:
+    libxgc-runtime-sdk-dev: rebuild
+    libxgc2-math-dev: verify
+  apt_versions:
+    focal: 0.3.0-1

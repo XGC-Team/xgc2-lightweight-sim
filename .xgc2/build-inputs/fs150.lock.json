@@ -1,0 +1,23 @@
+{
+  "schema": "xgc2.trusted-build-input.v1",
+  "repository": "XGC-Team/xgc2-fs150-sitl",
+  "source_sha": "65adfc04127a7331797fe2da4e3e236b7cdebefd",
+  "files": {
+    "scripts/generate_native_flight_model.py": {
+      "sha256": "cfb879e3966a903e0e9df2e63721ee59a8d4d228bbad0ba59ef70df43635be0d",
+      "git_blob": "e86aa5a8d7675de1f8525fd0151c46ef4d0e1450",
+      "size": 22953
+    },
+    "models/fs150/iris.sdf": {
+      "sha256": "c99e3d98de9f51c8e63915a3e9a6f97f6a2485dcae9342b3916fd5e7a90b052c",
+      "git_blob": "d9d187ef0700b6bd5a73a27470c20b6cc43df84c",
+      "size": 18271
+    },
+    "config/generated/fs150-sitl.params": {
+      "sha256": "e96da101e9ee3e20caff723f1e038850b6448caa5d1f9e3b858401a6756b4bfc",
+      "git_blob": "a22d11103a8612492d1ab01154c6bf714e69cba0",
+      "size": 1603
+    }
+  },
+  "input_digest": "4af1d6a93966e5f7797c3a724e6fe5bd6f047d2c829296b6a5065cfa20b99c8a"
+}

@@ -1,0 +1,103 @@
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        required: true
+        type: string
+      expected_source_sha:
+        required: true
+        type: string
+      prepare_action:
+        type: choice
+        default: release
+        options: [release, compatibility-verify]
+      apt_overlay_url:
+        type: string
+        default: ""
+      dependency_set_digest:
+        type: string
+        default: ""
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+env:
+  XGC2_APT_OVERLAY_URL: ${{ inputs.apt_overlay_url }}
+  XGC2_DEPENDENCY_SET_DIGEST: ${{ inputs.dependency_set_digest }}
+jobs:
+  interfaces:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate locked preparation identity
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          PREPARE_ACTION: ${{ inputs.prepare_action }}
+          DEPENDENCY_SET_DIGEST: ${{ inputs.dependency_set_digest }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test "$(awk -F': *' '/^version:/ {print $2; exit}' .xgc2/product.yml)" = "$EXPECTED_VERSION"
+          case "$PREPARE_ACTION" in release|compatibility-verify) ;; *) exit 1;; esac
+          test -z "$DEPENDENCY_SET_DIGEST" || [[ "$DEPENDENCY_SET_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          test -z "$XGC2_APT_OVERLAY_URL" || [[ "$DEPENDENCY_SET_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+      - name: Build the one architecture-independent interface Deb
+        run: .xgc2/scripts/build_debs_in_docker.sh --interfaces-only --work-dir "$RUNNER_TEMP/lightweight-interface" --output-dir "$GITHUB_WORKSPACE/interfaces"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lightweight-interface-bytes
+          path: interfaces/*.deb
+          retention-days: 14
+  build-debs:
+    name: Build and check native Debs (${{ matrix.arch }})
+    needs: interfaces
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-latest}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate locked preparation identity
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          PREPARE_ACTION: ${{ inputs.prepare_action }}
+          DEPENDENCY_SET_DIGEST: ${{ inputs.dependency_set_digest }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test "$(awk -F': *' '/^version:/ {print $2; exit}' .xgc2/product.yml)" = "$EXPECTED_VERSION"
+          case "$PREPARE_ACTION" in release|compatibility-verify) ;; *) exit 1;; esac
+          test -z "$DEPENDENCY_SET_DIGEST" || [[ "$DEPENDENCY_SET_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          test -z "$XGC2_APT_OVERLAY_URL" || [[ "$DEPENDENCY_SET_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+      - uses: actions/download-artifact@v4
+        with:
+          name: lightweight-interface-bytes
+          path: interfaces
+      - name: Build, test, install and run native payload negative controls
+        run: |
+          interface_deb="$(find interfaces -name '*.deb' -type f)"
+          test -n "$interface_deb"
+          .xgc2/scripts/build_debs_in_docker.sh --interface-deb "$interface_deb" --work-dir "$RUNNER_TEMP/lightweight-${{ matrix.arch }}" --output-dir "$GITHUB_WORKSPACE/debs"
+      - name: Create strict trusted build manifest
+        run: |
+          version="$(awk -F': *' '/^version:/ {print $2; exit}' .xgc2/product.yml)"
+          python3 .xgc2/scripts/xgc2_artifact_manifest.py build \
+            --deb-dir debs --output-dir .ci/build-manifests \
+            --product xgc2-lightweight-sim --product-version "$version" \
+            --distribution focal --architecture "${{ matrix.arch }}" \
+            --source-sha "$GITHUB_SHA" --ci-run-id "$GITHUB_RUN_ID" \
+            --ci-workflow "$GITHUB_WORKFLOW" --ci-workflow-ref "$GITHUB_WORKFLOW_REF"
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.prepare_action == 'release' }}
+        with:
+          name: xgc2-lightweight-sim-debs-${{ matrix.arch }}
+          path: |
+            debs/*.deb
+            .ci/build-manifests/*.json
+          retention-days: 14
+          include-hidden-files: true
