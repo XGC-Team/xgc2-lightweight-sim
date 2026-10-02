@@ -1,0 +1,276 @@
+{
+  "upstream_commit": "2e8918da66af37922ededee1cc2d2efffec4cfb2",
+  "include": "px4_v1_12_3/include/px4_reference.hpp",
+  "cmake_target": "px4_v1_12_3::core",
+  "library": "libpx4_v1_12_3.a",
+  "frames": {
+    "state": "NED world",
+    "body": "FRD",
+    "quaternion_order": [
+      "w",
+      "x",
+      "y",
+      "z"
+    ],
+    "conversion_owner": "flight-control owns one ENU/FLU to NED/FRD bridge"
+  },
+  "namespaces": {
+    "global": [
+      "AttitudeControl",
+      "RateControl",
+      "PositionControl",
+      "PositionControlStates",
+      "MultirotorMixer",
+      "Mixer"
+    ],
+    "unchanged": [
+      "matrix",
+      "ControlMath"
+    ]
+  },
+  "data_only_message_headers": [
+    "uORB/topics/vehicle_local_position_setpoint.h",
+    "uORB/topics/vehicle_attitude_setpoint.h",
+    "uORB/topics/rate_ctrl_status.h"
+  ],
+  "rate_control": {
+    "update": "Vector3f update(rate, rate_sp, angular_accel, float dt_seconds, bool landed)",
+    "saturation_type": "MultirotorMixer::saturation_status",
+    "saturation_feed": "status{}; status.value = previous_mix_uint16; setSaturationStatus(status)",
+    "saturation_flags": [
+      "valid",
+      "motor_pos",
+      "motor_neg",
+      "roll_pos",
+      "roll_neg",
+      "pitch_pos",
+      "pitch_neg",
+      "yaw_pos",
+      "yaw_neg",
+      "thrust_pos",
+      "thrust_neg"
+    ],
+    "gains_mapping": "P/I/D are MC_{ROLL,PITCH,YAW}RATE_{P,I,D} multiplied componentwise by MC_*RATE_K in the original caller; FF is set separately without K multiplication",
+    "output": "normalized torque; update itself does not clip total torque, original mixer clamps each control input",
+    "history": "owned per controller instance; update returns torque using previous integrator then advances integral; landed suppresses integral update, resetIntegral explicitly zeroes all axes"
+  },
+  "position_control": {
+    "setpoint_type": "vehicle_local_position_setpoint_s",
+    "state_type": "PositionControlStates",
+    "dt": "seconds",
+    "resetIntegral": "zeros all three velocity integrator axes",
+    "unset": "NaN keeps upstream per-axis no-setpoint/no-feedforward semantics; finite XY pairing checked by upstream update",
+    "gravity": "original CONSTANTS_ONE_G=9.80665f from pinned ECL geo.h retained"
+  },
+  "mixer": {
+    "constructors": [
+      "(ControlCallback, uintptr_t, MultirotorGeometry::QUAD_X)",
+      "(ControlCallback, uintptr_t, const Rotor *, unsigned count)"
+    ],
+    "rotor_fields": [
+      "roll_scale",
+      "pitch_scale",
+      "yaw_scale",
+      "thrust_scale"
+    ],
+    "callback": "int(uintptr_t handle, uint8_t group, uint8_t index, float &value); group 0 indices roll=0,pitch=1,yaw=2,thrust=3",
+    "airmode": {
+      "disabled": 0,
+      "roll_pitch": 1,
+      "roll_pitch_yaw": 2
+    },
+    "output": "original [-1,1]; one execution-boundary motor01=(raw+1)/2",
+    "factor": "set_thrust_factor(THR_MDL_FAC), applied once inside original mix before [-1,1] scaling",
+    "slew": "set_max_delta_out_once(delta_raw) before every mix; mix clears it to zero, motor history starts -1 in constructor",
+    "idle": "this exact original MultirotorMixer has no idle setter/member despite stale header comments; downstream output_limit is provenance only, not compiled. Any normalized idle/disarm policy belongs to the explicitly chosen execution boundary",
+    "private_original_functions": [
+      "compute_desaturation_gain",
+      "minimize_saturation",
+      "mix_airmode_disabled",
+      "mix_airmode_rp",
+      "mix_airmode_rpy",
+      "mix_yaw",
+      "update_saturation_status"
+    ],
+    "lifetime": "caller retains immutable Rotor array for mixer lifetime"
+  },
+  "parameters": {
+    "effective_owner": "flight-control four FCU files, one immutable runtime snapshot",
+    "source_of_defaults": "raw *_params.c files in source-manifest; no runtime/default table supplied here",
+    "actual_FS150_overrides_owner": "flight-control; not inferred from reference tests",
+    "units": "official declared units are retained in source comments; gains without @unit use the native math signatures, not guessed Nm conversions"
+  },
+  "trace_schema": {
+    "record_keys": [
+      "case",
+      "step",
+      "input",
+      "output"
+    ],
+    "nonfinite": [
+      "nan",
+      "inf",
+      "-inf"
+    ],
+    "rate_config": "P3,I3,D3,integrator_limit3,FF3, all explicit synthetic fixture gains",
+    "rate_input": "rate3,rate_sp3,angular_accel3,dt,landed,reset,saturation_uint16",
+    "rate_output": "torque3,integrator3",
+    "attitude_input": "yaw_weight,yaw_ff,P3,rate_limit3,q_current_wxyz4,q_desired_wxyz4",
+    "attitude_output": "rate3,antipodal_rate3",
+    "position_config": "positionP3,velocityP3,I3,D3,velocity_horizontal/up/down3,thrust_min/max2,tilt_rad,hover",
+    "position_input": "dt,reset,new_hover_or_0,state_position3,velocity3,acceleration3,yaw,setpoint_position3,velocity3,acceleration3,yaw,yawspeed",
+    "position_output": "velocity3,acceleration3,thrust_NED3,yaw,yawspeed,attitude_q_wxyz4",
+    "mixer_input": "airmode,factor,dt,slew_enabled,delta_raw,rate_reset,previous_saturation_uint16,rate_sp3,rate3,angular_accel3,collective01",
+    "mixer_output": "raw_motor4,motor01_4,rate_torque3,rate_integrator3,current_saturation_uint16",
+    "fixture_only": "stress tuning in px4_reference_test.cpp is test stimulus, never runtime defaults"
+  },
+  "build_tests_option": "PX4_REFERENCE_BUILD_TESTS=ON for offline oracle/upstream GTest; default OFF for core consumers",
+  "parameter_api_sources": {
+    "AttitudeControl.setProportionalGain": {
+      "names": [
+        "MC_ROLL_P",
+        "MC_PITCH_P",
+        "MC_YAW_P",
+        "MC_YAW_WEIGHT"
+      ],
+      "notes": []
+    },
+    "AttitudeControl.setRateLimit": {
+      "names": [
+        "MC_ROLLRATE_MAX",
+        "MC_PITCHRATE_MAX",
+        "MC_YAWRATE_MAX"
+      ],
+      "notes": [
+        "declared deg/s, original caller uses math::radians"
+      ]
+    },
+    "RateControl.setGains": {
+      "names": [
+        "MC_ROLLRATE_K",
+        "MC_ROLLRATE_P",
+        "MC_ROLLRATE_I",
+        "MC_ROLLRATE_D",
+        "MC_PITCHRATE_K",
+        "MC_PITCHRATE_P",
+        "MC_PITCHRATE_I",
+        "MC_PITCHRATE_D",
+        "MC_YAWRATE_K",
+        "MC_YAWRATE_P",
+        "MC_YAWRATE_I",
+        "MC_YAWRATE_D"
+      ],
+      "notes": [
+        "K folds into P/I/D only"
+      ]
+    },
+    "RateControl.setIntegratorLimit": {
+      "names": [
+        "MC_RR_INT_LIM",
+        "MC_PR_INT_LIM",
+        "MC_YR_INT_LIM"
+      ],
+      "notes": []
+    },
+    "RateControl.setFeedForwardGain": {
+      "names": [
+        "MC_ROLLRATE_FF",
+        "MC_PITCHRATE_FF",
+        "MC_YAWRATE_FF"
+      ],
+      "notes": []
+    },
+    "PositionControl.setPositionGains": {
+      "names": [
+        "MPC_XY_P",
+        "MPC_Z_P"
+      ],
+      "notes": []
+    },
+    "PositionControl.setVelocityGains": {
+      "names": [
+        "MPC_XY_VEL_P_ACC",
+        "MPC_XY_VEL_I_ACC",
+        "MPC_XY_VEL_D_ACC",
+        "MPC_Z_VEL_P_ACC",
+        "MPC_Z_VEL_I_ACC",
+        "MPC_Z_VEL_D_ACC"
+      ],
+      "notes": []
+    },
+    "PositionControl.setVelocityLimits": {
+      "names": [
+        "MPC_XY_VEL_MAX",
+        "MPC_Z_VEL_MAX_UP",
+        "MPC_Z_VEL_MAX_DN"
+      ],
+      "notes": [
+        "caller may apply stricter task constraints"
+      ]
+    },
+    "PositionControl.setThrustLimits": {
+      "names": [
+        "MPC_THR_MIN",
+        "MPC_THR_MAX"
+      ],
+      "notes": []
+    },
+    "PositionControl.setTiltLimit": {
+      "names": [
+        "MPC_TILTMAX_AIR",
+        "MPC_TILTMAX_LND"
+      ],
+      "notes": [
+        "deg in parameters, radians in core"
+      ]
+    },
+    "PositionControl.setHoverThrust/updateHoverThrust": {
+      "names": [
+        "MPC_THR_HOVER"
+      ],
+      "notes": [
+        "normalized value, HTE selection/update belongs to caller"
+      ]
+    },
+    "MultirotorMixer.set_airmode": {
+      "names": [
+        "MC_AIRMODE"
+      ],
+      "notes": []
+    },
+    "MultirotorMixer.set_thrust_factor": {
+      "names": [
+        "THR_MDL_FAC"
+      ],
+      "notes": []
+    },
+    "MultirotorMixer.set_max_delta_out_once": {
+      "names": [
+        "MOT_SLEW_MAX"
+      ],
+      "notes": [
+        "exact original MixingOutput formula retained as read-only provenance, hardware span not imported"
+      ]
+    },
+    "virtual FCU offboard loss boundary": {
+      "names": [
+        "COM_OF_LOSS_T"
+      ],
+      "notes": [
+        "original declaration only, no Commander runtime"
+      ]
+    }
+  },
+  "gain_units_inferred_from_native_signatures": {
+    "attitude_P": "rad/s per dimensionless quaternion error",
+    "rate_P_and_FF": "normalized torque per rad/s",
+    "rate_I": "normalized torque per rad",
+    "rate_D": "normalized torque per rad/s^2",
+    "rate_integrator_limit": "normalized torque",
+    "position_P": "s^-1",
+    "velocity_P": "s^-1",
+    "velocity_I": "s^-2",
+    "velocity_D": "dimensionless",
+    "note": "Dimensional explanations only where upstream @unit is absent; no physical Nm or second live gain table."
+  }
+}
