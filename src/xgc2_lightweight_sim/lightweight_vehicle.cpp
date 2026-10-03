@@ -120,7 +120,8 @@ struct Commands {
   std::deque<Input> pending;
   Occurrences future_drops, full_drops, invalid_drops;
 
-  void drain(const Grid &grid, uint32_t robot, Port port, size_t size) {
+  void drain(const Grid &grid, uint32_t robot, Port port, size_t size,
+             uint64_t generation) {
     xgc_sample_view sample{};
     while (grid.host->next(grid.host->host, robot * kPortsPerRobot + port,
                            &sample) == XGC_OK) {
@@ -162,7 +163,7 @@ struct Commands {
         continue;
       }
       // Never use a future control early or rewrite an already integrated past.
-      Input input{std::max({grid.time, sample.t_rx, effective}), port, 0, {}};
+      Input input{std::max({grid.time, sample.t_rx, effective}), port, generation, {}};
       std::memcpy(input.data.data(), sample.data, size);
       auto at = std::upper_bound(
           pending.begin(), pending.end(), input.at,
@@ -619,16 +620,17 @@ struct Plant {
   void run(std::vector<Robot> &robots, const xgc_step_ctx &context) {
     for (uint32_t i = 0; i != robots.size(); ++i) {
       auto &commands = robots[i].commands;
-      commands.drain(grid, i, Setpoint, sizeof(xgc_position_target_v1));
-      commands.drain(grid, i, VelocityCommand, sizeof(xgc_twist_v1));
-      commands.drain(grid, i, AttitudeCommand, sizeof(xgc_attitude_target_v2));
-      commands.drain(grid, i, FcuRequest, sizeof(xgc_fcu_request_v2));
+      uint64_t generation = 0;
+      if constexpr (std::is_same_v<Robot, FlightRobot>)
+        generation = robots[i].generation;
+      commands.drain(grid, i, Setpoint, sizeof(xgc_position_target_v1), generation);
+      commands.drain(grid, i, VelocityCommand, sizeof(xgc_twist_v1), generation);
+      commands.drain(grid, i, AttitudeCommand, sizeof(xgc_attitude_target_v2), generation);
+      commands.drain(grid, i, FcuRequest, sizeof(xgc_fcu_request_v2), generation);
       if constexpr (std::is_same_v<Robot, FlightRobot>) {
         // Tag arrival before lifecycle processing: reset drops both pending
         // future inputs and every old ingress drained in this same boundary.
         if (!robots[i].provider_enabled) commands.pending.clear();
-        else for (auto &input : commands.pending)
-          if (input.generation == 0) input.generation = robots[i].generation;
       }
     }
     if constexpr (std::is_same_v<Robot, FlightRobot>) providers();
