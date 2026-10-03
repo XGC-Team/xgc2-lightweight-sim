@@ -1,6 +1,6 @@
-#include "xgc_rt.h"
-#include "xgc_schemas_v1.h"
-#include "xgc_dmpc_planner_v1.h"
+#include <xgc_rt.h>
+#include <xgc-robotics-interfaces/robotics_interfaces_v1.h>
+#include <xgc-lightweight-sim/simulation_records_v1.h>
 
 #include <algorithm>
 #include <array>
@@ -688,7 +688,7 @@ void full_attitude_and_specific_force() {
     Observed s{model.pose(), model.velocity(), {}};
     std::memcpy(&s.imu, model.outputs.at(5).data(), sizeof s.imu);
     assert(s.imu.stamp == s.pose.stamp && s.pose.stamp == s.velocity.stamp);
-    xgc_dmpc_paired_state_v1 paired{};
+    xgc_paired_state_v1 paired{};
     std::memcpy(&paired, model.outputs.at(7).data(), sizeof paired);
     assert(paired.pose_stamp_sec == s.pose.stamp);
     assert(paired.twist_stamp_sec == s.velocity.stamp);

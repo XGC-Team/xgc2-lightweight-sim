@@ -1,9 +1,9 @@
-#include "flat_config.hpp"
+#include <flat_config.hpp>
 #include "vehicle_model.hpp"
 #include "fcu_parameter_config.hpp"
-#include "xgc_dmpc_planner_v1.h"
-#include "xgc_rt.h"
-#include "xgc_schemas_v1.h"
+#include <xgc-robotics-interfaces/robotics_interfaces_v1.h>
+#include <xgc_rt.h>
+#include <xgc-lightweight-sim/simulation_records_v1.h>
 
 #include <array>
 #include <cstring>
@@ -199,7 +199,7 @@ void planar_output(const Grid &grid, uint32_t robot, uint64_t round,
   velocity.linear[0] = world.x();
   velocity.linear[1] = world.y();
   velocity.angular[2] = yaw_rate;
-  xgc_dmpc_paired_state_v1 paired{};
+  xgc_paired_state_v1 paired{};
   paired.pose_stamp_sec = paired.twist_stamp_sec = stamp;
   std::copy(pose.position, pose.position + 3, paired.position);
   paired.orientation_xyzw[2] = pose.q_wxyz[3];
@@ -347,7 +347,7 @@ struct FlightRobot {
     state.guided = provider_enabled;
     state.system_status = !provider_enabled ? 0 : model.armed() ? 4 : 3; // MAV_STATE_ACTIVE/STANDBY
     std::strcpy(state.mode, fcu_mode.c_str());
-    xgc_dmpc_paired_state_v1 paired{};
+    xgc_paired_state_v1 paired{};
     paired.pose_stamp_sec = paired.twist_stamp_sec = stamp;
     std::copy(pose.position, pose.position + 3, paired.position);
     for (int i = 0; i != 3; ++i)

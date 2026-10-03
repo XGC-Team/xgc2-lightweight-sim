@@ -1,8 +1,13 @@
 // Numerical ABI coupling with the actual, separately built ctl-px4 ELF.
 // No real FCU/ROS/network; this verifies the unchanged SMC lifecycle on the
 // plant.
-#include "xgc_rt.h"
-#include "xgc_schemas_v1.h"
+#include <xgc_rt.h>
+#include <xgc-robotics-interfaces/robotics_interfaces_v1.h>
+#include <xgc-lightweight-sim/simulation_records_v1.h>
+#include <hover_thrust_estimator/native/hover_thrust_wire.h>
+#include <multirotor_reference_trajectory/reference_wire_v1.h>
+
+using hover_thrust_native::xgc_hover_thrust_v1;
 #include <algorithm>
 #include <array>
 #include <cassert>

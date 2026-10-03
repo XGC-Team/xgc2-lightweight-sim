@@ -1,5 +1,6 @@
-#include "xgc_rt.h"
-#include "xgc_schemas_v1.h"
+#include <xgc_rt.h>
+#include <xgc-robotics-interfaces/robotics_interfaces_v1.h>
+#include <xgc-lightweight-sim/simulation_records_v1.h>
 #include <array>
 #include <cassert>
 #include <cmath>

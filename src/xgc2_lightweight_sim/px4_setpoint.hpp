@@ -5,7 +5,7 @@
 #include <cmath>
 #include <limits>
 
-#include "xgc_schemas_v1.h"
+#include <xgc-robotics-interfaces/control_records_v1.h>
 
 namespace xgc_lightweight {
 
