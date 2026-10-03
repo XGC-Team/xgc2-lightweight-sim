@@ -18,7 +18,8 @@ apt:
   - ros-noetic-xgc2-lightweight-sim-msgs
   package_architectures:
     ros-noetic-xgc2-lightweight-sim-msgs:
-    - all
+    - amd64
+    - arm64
   depends:
   - ros-noetic-message-runtime
 usage:
