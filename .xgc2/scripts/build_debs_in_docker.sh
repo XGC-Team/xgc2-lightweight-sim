@@ -70,11 +70,14 @@ docker run --rm \
       echo "deb [signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] ${XGC2_APT_OVERLAY_URL%/} focal main" >/etc/apt/sources.list.d/00-xgc2-release-train.list
     fi
     apt-get update
-    apt-get install -y --no-install-recommends libxgc2-runtime-sdk-dev libxgc2-math-dev
+    apt-get install -y --no-install-recommends libxgc2-runtime-sdk-dev libxgc2-math-dev libxgc2-robotics-interfaces-dev
     test -f /usr/include/xgc-runtime/xgc_rt.h
     test -f /usr/share/cmake/XgcRuntimeSDK/XgcRuntimeSDKConfig.cmake
     dpkg-query -S /usr/include/xgc-runtime/xgc_rt.h /usr/share/cmake/XgcRuntimeSDK/XgcRuntimeSDKConfig.cmake
     dpkg --compare-versions "$(dpkg-query -W -f="\${Version}" libxgc2-runtime-sdk-dev)" ge 0.1.0-2~focal
+    cmake -S "$source/src/xgc2_lightweight_sim/interfaces" -B /workspace/work/native-interfaces \
+      -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_INCLUDEDIR=include -DCMAKE_INSTALL_DATADIR=share
+    cmake --install /workspace/work/native-interfaces
     cmake -S "$source" -B /workspace/work/native \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
       -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_DATADIR=share \
@@ -84,6 +87,7 @@ docker run --rm \
     cmake --build /workspace/work/native -j "$(nproc)"
     (cd /workspace/work/native/src/xgc2_lightweight_sim && ctest --output-on-failure)
     DESTDIR=/workspace/work/native-install cmake --install /workspace/work/native
+    DESTDIR=/workspace/work/native-install cmake --install /workspace/work/native-interfaces
     PACKAGE_MODE=native "$source/.xgc2/scripts/package_debs.sh" \
       --install-root /workspace/work/native-install --output-dir /workspace/out
     "$source/.xgc2/scripts/check_native_package_payload.sh" /workspace/work/native-install /workspace/out

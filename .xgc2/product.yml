@@ -46,8 +46,10 @@ release:
   requires:
   - libxgc2-runtime-sdk-dev
   - libxgc2-math-dev
+  - libxgc2-robotics-interfaces-dev
   dependency_policy:
     libxgc2-runtime-sdk-dev: rebuild
     libxgc2-math-dev: verify
+    libxgc2-robotics-interfaces-dev: rebuild
   apt_versions:
     focal: 0.3.0-1
