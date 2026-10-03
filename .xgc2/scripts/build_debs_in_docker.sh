@@ -74,7 +74,7 @@ docker run --rm \
     test -f /usr/include/xgc-runtime/xgc_rt.h
     test -f /usr/share/cmake/XgcRuntimeSDK/XgcRuntimeSDKConfig.cmake
     dpkg-query -S /usr/include/xgc-runtime/xgc_rt.h /usr/share/cmake/XgcRuntimeSDK/XgcRuntimeSDKConfig.cmake
-    dpkg --compare-versions "$(dpkg-query -W -f="\${Version}" libxgc2-runtime-sdk-dev)" ge 0.1.0-1~focal
+    dpkg --compare-versions "$(dpkg-query -W -f="\${Version}" libxgc2-runtime-sdk-dev)" ge 0.1.0-2~focal
     cmake -S "$source" -B /workspace/work/native \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
       -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_DATADIR=share \

@@ -10,7 +10,13 @@ shopt -s nullglob
 debs=("$deb_dir"/xgc2-lightweight-sim_*.deb)
 [[ ${#debs[@]} == 1 ]]
 dpkg-deb --extract "${debs[0]}" "$work/payload"
-paths=(/usr/lib/xgc2-lightweight-sim/liblightweight_vehicle.so /usr/share/xgc2-lightweight-sim/fs150_native_flight_model.json)
+WIRE_PATHS=(
+  "/usr/include/xgc-lightweight-sim/simulation_records_v1.h"
+  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesConfig.cmake"
+  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesConfigVersion.cmake"
+  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesTargets.cmake"
+)
+paths=(/usr/lib/xgc2-lightweight-sim/liblightweight_vehicle.so /usr/share/xgc2-lightweight-sim/fs150_native_flight_model.json "${WIRE_PATHS[@]}")
 for path in "${paths[@]}"; do cmp "$install_root$path" "$work/payload$path"; done
 for missing in "${paths[@]}"; do
   root="$work/missing-$(basename "$missing")"

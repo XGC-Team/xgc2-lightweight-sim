@@ -12,3 +12,14 @@ set -u
 test "$(rospack find xgc2_lightweight_sim_msgs)" = /opt/ros/noetic/share/xgc2_lightweight_sim_msgs
 test -f /opt/ros/noetic/include/xgc2_lightweight_sim_msgs/SetProvider.h
 rossrv show xgc2_lightweight_sim_msgs/SetProvider >/dev/null
+
+WIRE_PATHS=(
+  "/usr/include/xgc-lightweight-sim/simulation_records_v1.h"
+  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesConfig.cmake"
+  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesConfigVersion.cmake"
+  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesTargets.cmake"
+)
+for path in "${WIRE_PATHS[@]}"; do
+  test -f "${path}"
+  dpkg-query -S "${path}" | grep -Fxq "xgc2-lightweight-sim: ${path}"
+done

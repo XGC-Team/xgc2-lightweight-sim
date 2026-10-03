@@ -28,6 +28,8 @@ usage:
   notes: The native model has no ROS or SSS runtime dependency. FS150 build inputs are immutable owner bytes pinned by .xgc2/build-inputs/fs150.lock.json.
 ownership:
   paths:
+  - /usr/include/xgc-lightweight-sim
+  - /usr/share/cmake/XgcLightweightSimInterfaces
   - /usr/lib/xgc2-lightweight-sim
   - /usr/share/xgc2-lightweight-sim
   - /opt/ros/noetic/share/xgc2_lightweight_sim_msgs

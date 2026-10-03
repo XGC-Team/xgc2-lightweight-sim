@@ -13,7 +13,13 @@ model=/usr/share/xgc2-lightweight-sim/fs150_native_flight_model.json
 interface=/opt/ros/noetic/share/xgc2_lightweight_sim_msgs/srv/SetProvider.srv
 header=/opt/ros/noetic/include/xgc2_lightweight_sim_msgs/SetProvider.h
 required=()
-[[ "$mode" == interfaces ]] || required+=("$native_library" "$model")
+WIRE_PATHS=(
+  "/usr/include/xgc-lightweight-sim/simulation_records_v1.h"
+  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesConfig.cmake"
+  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesConfigVersion.cmake"
+  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesTargets.cmake"
+)
+[[ "$mode" == interfaces ]] || required+=("$native_library" "$model" "${WIRE_PATHS[@]}")
 [[ "$mode" == native ]] || required+=("$interface" "$header")
 for path in "${required[@]}"; do
   [[ -f "$install_root$path" ]] || { echo "missing required installed payload: $path" >&2; exit 1; }
@@ -36,6 +42,10 @@ if [[ "$mode" != interfaces ]]; then
   mkdir -p "$pkg/usr/lib/xgc2-lightweight-sim" "$pkg/usr/share/xgc2-lightweight-sim" "$pkg/DEBIAN" "$work/debian"
   cp -a "$install_root$native_library" "$pkg$native_library"
   cp -a "$install_root$model" "$pkg$model"
+  for path in "${WIRE_PATHS[@]}"; do
+    mkdir -p "$pkg$(dirname "$path")"
+    cp -a "$install_root$path" "$pkg$path"
+  done
   cp "$root/.xgc2/build-inputs/fs150.lock.json" "$pkg/usr/share/xgc2-lightweight-sim/fs150-build-inputs.json"
   printf 'Source: xgc2-lightweight-sim\nSection: science\nPriority: optional\nMaintainer: XGC2 <867768510@qq.com>\n\nPackage: xgc2-lightweight-sim\nArchitecture: any\n' >"$work/debian/control"
   depends="$(cd "$work" && dpkg-shlibdeps -O -e"$pkg$native_library")"
