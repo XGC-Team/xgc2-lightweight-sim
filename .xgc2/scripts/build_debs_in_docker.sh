@@ -76,11 +76,11 @@ docker run --rm \
     dpkg-query -S /usr/include/xgc-runtime/xgc_rt.h /usr/share/cmake/XgcRuntimeSDK/XgcRuntimeSDKConfig.cmake
     dpkg --compare-versions "$(dpkg-query -W -f="\${Version}" libxgc2-runtime-sdk-dev)" ge 0.1.0-2~focal
     cmake -S "$source/src/xgc2_lightweight_sim/interfaces" -B /workspace/work/native-interfaces \
-      -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_INCLUDEDIR=include -DCMAKE_INSTALL_DATADIR=share
+      -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_INCLUDEDIR:STRING=include -DCMAKE_INSTALL_DATADIR:STRING=share
     cmake --install /workspace/work/native-interfaces --prefix /usr
     cmake -S "$source" -B /workspace/work/native \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
-      -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_DATADIR=share \
+      -DCMAKE_INSTALL_LIBDIR:STRING=lib -DCMAKE_INSTALL_DATADIR:STRING=share \
       -DXGC_RUNTIME_SDK_SOURCE_ROOT= -DXGC2_MATH_INCLUDE=/usr/include \
       -DFS150_ASSET_SOURCE_ROOT="$source/.xgc2/build-inputs/fs150" \
       -DLIGHTWEIGHT_TESTS=ON -DLIGHTWEIGHT_CONTROLLER_TEST=OFF
