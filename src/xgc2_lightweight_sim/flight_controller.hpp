@@ -128,12 +128,21 @@ public:
     }
     return false;
   }
+  // Startup/diagnostic lookup by name (linear). Nothing on the per-step path
+  // may call it: the step loop reads values hoisted at construction.
   float get(std::string_view name) const {
+    ++lookup_count();
     const auto &rows = definitions();
     for (size_t i = 0; i != kCount; ++i)
       if (name == rows[i].name)
         return values_[i];
     throw std::invalid_argument("unknown PX4 FCU parameter");
+  }
+  // Calls to get() made by the current thread; lets a test prove that a
+  // model step performs none.
+  static uint64_t &lookup_count() {
+    static thread_local uint64_t count = 0;
+    return count;
   }
   std::array<ParameterSnapshot, kCount> snapshot() const {
     std::array<ParameterSnapshot, kCount> result{};
@@ -267,6 +276,12 @@ public:
     if (parameters.get("MPC_THR_MIN") > parameters.get("MPC_THR_MAX") ||
         plant.max_rotor_speed < kMotorArmedZero + kMotorScaling)
       throw std::invalid_argument("invalid thrust limits or FS motor command range");
+    // Values the per-step path reads. Parameters are immutable after
+    // construction, so each is read once here (same float, same arithmetic).
+    tilt_max_air_ = parameters.get("MPC_TILTMAX_AIR");
+    tilt_max_land_ = parameters.get("MPC_TILTMAX_LND");
+    thrust_model_factor_ = parameters.get("THR_MDL_FAC");
+    motor_slew_max_ = parameters.get("MOT_SLEW_MAX");
     const auto p = [&parameters](const char *name) { return parameters.get(name); };
     attitude_.setProportionalGain({p("MC_ROLL_P"), p("MC_PITCH_P"), p("MC_YAW_P")},
                                   p("MC_YAW_WEIGHT"));
@@ -323,8 +338,7 @@ public:
     states.acceleration = Px4Frame::world(feedback.acceleration);
     states.yaw = matrix::Eulerf(q).psi();
     position_.setState(states);
-    position_.setTiltLimit(Px4Frame::radians(parameters_.get(
-        landing ? "MPC_TILTMAX_LND" : "MPC_TILTMAX_AIR")));
+    position_.setTiltLimit(Px4Frame::radians(landing ? tilt_max_land_ : tilt_max_air_));
     position_.setInputSetpoint(Px4Frame::setpoint(setpoint));
     const bool valid = position_.update(static_cast<float>(dt));
     if (!valid) {
@@ -415,7 +429,7 @@ public:
   Eigen::Vector4d normalized_controls_for_wrench(const Eigen::Vector4d &wrench) const {
     const auto force = physical_matrix_.fullPivLu().solve(wrench).eval();
     Eigen::Vector4d thrust_model;
-    const double alpha = parameters_.get("THR_MDL_FAC");
+    const double alpha = thrust_model_factor_;
     for (int i = 0; i != 4; ++i) {
       const auto &channel = fs150_native_asset::rotors[i];
       const double motor = (std::sqrt(force[i] / plant_.thrust_coefficient) -
@@ -446,7 +460,7 @@ private:
   RotorAllocation mix(const matrix::Vector3f &torque, double thrust,
                       double dt, bool armed) {
     *controls_ = {torque(0), torque(1), torque(2), static_cast<float>(thrust)};
-    const float slew = parameters_.get("MOT_SLEW_MAX");
+    const float slew = motor_slew_max_;
     mixer_->set_max_delta_out_once(slew > 0.f ? 2.f * static_cast<float>(dt) / slew : 0.f);
     float outputs[4]{};
     if (mixer_->mix(outputs, 4) != 4)
@@ -481,7 +495,7 @@ private:
         torque(i) = 0.f;
     result.normalized_torque_frd = {torque(0), torque(1), torque(2)};
     result.allocation = mix(torque, thrust, dt, true);
-    const double alpha = parameters_.get("THR_MDL_FAC");
+    const double alpha = thrust_model_factor_;
     for (int i = 0; i != 4; ++i) {
       const double m = result.allocation.motor_commands[i];
       result.allocated_normalized_thrust += ((1.0 - alpha) * m + alpha * m * m) / 4.0;
@@ -490,6 +504,7 @@ private:
 
   RigidBodyParameters plant_;
   FlightControllerParameters parameters_;
+  float tilt_max_air_{0.f}, tilt_max_land_{0.f}, thrust_model_factor_{0.f}, motor_slew_max_{0.f};
   AttitudeControl attitude_;
   RateControl rate_;
   PositionControl position_;

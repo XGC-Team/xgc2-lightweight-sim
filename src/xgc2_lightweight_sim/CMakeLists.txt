@@ -40,7 +40,7 @@ target_link_libraries(lightweight_vehicle PRIVATE px4_v1_12_3::core XgcRuntime::
 
 if(LIGHTWEIGHT_TESTS)
   enable_testing()
-  foreach(test_name rigid_body flight_controller model px4_setpoint ground_contact)
+  foreach(test_name rigid_body flight_controller model px4_setpoint ground_contact hot_path)
     add_executable(${test_name}_test ${test_name}_test.cpp)
     target_compile_features(${test_name}_test PRIVATE cxx_std_17)
     target_compile_options(${test_name}_test PRIVATE -O2 -Wall -Wextra -Werror -UNDEBUG)

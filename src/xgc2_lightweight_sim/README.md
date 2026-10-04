@@ -76,6 +76,12 @@ packet arrival. PVA conversion preserves the fixed MAVROS1.20/PX4receiver
 semantics, including receiver heartbeat versus PositionControl validity.
 Rejected user input does not refresh the valid stream or terminate the batch.
 
+`FlightModel::step` reads no FCU parameter by name: the values it needs
+(`MPC_TILTMAX_AIR/LND`, `THR_MDL_FAC`, `MOT_SLEW_MAX`, `COM_OF_LOSS_T`,
+`MPC_LAND_SPEED`) are read once at construction from the immutable parameter
+block. `hot_path_test` asserts zero `get()` calls inside any step and compares
+the trajectory with states recorded from the by-name implementation.
+
 `test.sh` builds owning targets, retaining assertions in Release tests.
 `provider_test` loads the actual installed ELF and checks lifecycle/generation
 fences. `test-controller.sh PLANT.so CTL.so HTE.so ...` consumes actual installed

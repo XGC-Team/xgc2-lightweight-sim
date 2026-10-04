@@ -37,7 +37,9 @@ public:
                        const FlightControllerParameters &parameters = {},
                        double world_ground_z = 0.0)
       : body_(position, yaw), controller_(body_.parameters(), parameters),
-        ground_z_(world_ground_z), initial_position_(position), initial_yaw_(yaw) {
+        ground_z_(world_ground_z), initial_position_(position), initial_yaw_(yaw),
+        offboard_loss_timeout_(controller_.parameters().get("COM_OF_LOSS_T")),
+        land_speed_(controller_.parameters().get("MPC_LAND_SPEED")) {
     if (!std::isfinite(world_ground_z))
       throw std::invalid_argument("flight model: invalid world ground");
     constrain_ground(0.0);
@@ -182,7 +184,7 @@ public:
         } else {
           command.velocity.setZero();
           if (mode_ == FlightMode::Land)
-            command.velocity.z() = -parameters().get("MPC_LAND_SPEED");
+            command.velocity.z() = -land_speed_;
         }
         control_output_ = controller_.command_pva(feedback, command, h,
                                                   landed(), mode_ == FlightMode::Land);
@@ -236,7 +238,7 @@ private:
         loss_pending_ = true;
         loss_age_ = 0.0;
       }
-      if (loss_age_ >= parameters().get("COM_OF_LOSS_T") - 1e-9)
+      if (loss_age_ >= offboard_loss_timeout_ - 1e-9)
         offboard_available_ = false;
       loss_age_ += dt;
     }
@@ -248,6 +250,9 @@ private:
   double ground_z_;
   Eigen::Vector3d initial_position_;
   double initial_yaw_;
+  // Read once from the immutable parameter block; the step loop never looks
+  // parameters up by name.
+  float offboard_loss_timeout_, land_speed_;
   MaskedPva setpoint_;
   FlightAttitudeSetpoint attitude_setpoint_;
   FlightControlOutput control_output_;
