@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xgc2-lightweight-sim
 name: XGC2 Lightweight Simulator
-version: 0.3.0-1
+version: 0.3.0-2
 kind: ros1-apt
 summary: Independent native rigid-body and FCU simulator with its minimal ROS1 lifecycle interface.
 ros:
@@ -22,6 +22,8 @@ apt:
     - arm64
   depends:
   - ros-noetic-message-runtime
+  - ros-noetic-std-msgs
+  - ros-noetic-geometry-msgs
 usage:
   install: sudo apt install xgc2-lightweight-sim ros-noetic-xgc2-lightweight-sim-msgs
   smoke_test: test -f /usr/lib/xgc2-lightweight-sim/liblightweight_vehicle.so
@@ -52,4 +54,4 @@ release:
     libxgc2-math-dev: verify
     libxgc2-robotics-interfaces-dev: rebuild
   apt_versions:
-    focal: 0.3.0-1
+    focal: 0.3.0-2

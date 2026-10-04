@@ -20,7 +20,11 @@ WIRE_PATHS=(
   "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesTargets.cmake"
 )
 [[ "$mode" == interfaces ]] || required+=("$native_library" "$model" "${WIRE_PATHS[@]}")
-[[ "$mode" == native ]] || required+=("$interface" "$header")
+[[ "$mode" == native ]] || required+=("$interface" "$header"
+  /opt/ros/noetic/share/xgc2_lightweight_sim_msgs/msg/NamedPose.msg
+  /opt/ros/noetic/share/xgc2_lightweight_sim_msgs/msg/PartitionPoses.msg
+  /opt/ros/noetic/include/xgc2_lightweight_sim_msgs/NamedPose.h
+  /opt/ros/noetic/include/xgc2_lightweight_sim_msgs/PartitionPoses.h)
 for path in "${required[@]}"; do
   [[ -f "$install_root$path" ]] || { echo "missing required installed payload: $path" >&2; exit 1; }
 done
@@ -64,6 +68,6 @@ if [[ "$mode" != native ]]; then
       cp -a "$install_root$path" "$pkg$path"
     fi
   done
-  printf 'Package: %s\nVersion: %s\nArchitecture: all\nSection: misc\nPriority: optional\nMaintainer: XGC2 <867768510@qq.com>\nDepends: ros-noetic-message-runtime\nDescription: Minimal XGC2 lightweight simulator ROS1 lifecycle interface\n' "$name" "$version" >"$pkg/DEBIAN/control"
+  printf 'Package: %s\nVersion: %s\nArchitecture: all\nSection: misc\nPriority: optional\nMaintainer: XGC2 <867768510@qq.com>\nDepends: ros-noetic-message-runtime, ros-noetic-std-msgs, ros-noetic-geometry-msgs\nDescription: XGC2 lightweight simulator lifecycle and named-pose interface\n' "$name" "$version" >"$pkg/DEBIAN/control"
   dpkg-deb --root-owner-group --build "$pkg" "$output/${name}_${version}_all.deb" >/dev/null
 fi
