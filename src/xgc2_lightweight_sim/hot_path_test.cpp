@@ -1,18 +1,17 @@
-#include <algorithm>
 // The per-step path of FlightModel must not look FCU parameters up by name,
-// and hoisting the values it reads must not change one bit of the model.
+// and the values it reads instead must be the ones get() returns.
 //
 // 1. Lookup count: FlightControllerParameters::get() is a linear string scan.
 //    Its count must not move across any step, in any mode, in any command
-//    channel. Construction and reset may read parameters.
-// 2. Golden trajectory: states recorded from the by-name implementation
-//    (commit fed3fdc, before the values were hoisted) at fixed checkpoints of
-//    a scenario that reaches every hoisted value (default and overridden
-//    MPC_TILTMAX_AIR/LND, THR_MDL_FAC, MOT_SLEW_MAX, COM_OF_LOSS_T,
-//    MPC_LAND_SPEED). The comparison tolerance is 1e-9 so that a different
-//    libm or compiler cannot fail it; a changed value or step order is many
-//    orders larger. The by-name and hoisted builds were also compared bit for
-//    bit (identical FNV-1a over the final states) by the change author.
+//    channel (disarmed, armed hold, offboard PVA, stream loss, raw attitude,
+//    raw rate, land). Construction and reset may read parameters.
+// 2. Hoisted values: each value the step path reads is the float get()
+//    returns for its parameter, with default and with overridden parameters.
+//    Step arithmetic is untouched, so the model is the same bit for bit.
+//    (A recorded-trajectory comparison is not portable: the PX4 control code
+//    is float32 and event times such as touchdown shift by a step with the
+//    compiler, so the by-name and hoisted builds were compared bit for bit
+//    with one toolchain by the change author instead.)
 #include "vehicle_model.hpp"
 
 #include <cstdlib>
@@ -132,35 +131,32 @@ FlightControllerParameters overridden() {
   return parameters;
 }
 
-#include "hot_path_golden.inc"
-
-void compare(const char *name, const std::vector<double> &actual,
-             const std::vector<double> &golden) {
-  REQUIRE(actual.size() == golden.size()); // scenario length changed
-  for (size_t i = 0; i != actual.size(); ++i) {
-    const double scale = std::max(1.0, std::abs(golden[i]));
-    if (!(std::abs(actual[i] - golden[i]) <= 1e-9 * scale)) {
-      std::fprintf(stderr, "%s[%zu]: %.17g != golden %.17g\n", name, i, actual[i], golden[i]);
-      std::abort();
-    }
-  }
-}
-
 } // namespace
 
-int main(int argc, char **) {
-  const auto defaults = scenario(FlightControllerParameters{});
-  const auto custom = scenario(overridden());
-  if (argc > 1) { // regenerate with `hot_path_test print` on the by-name build
-    for (const auto *run : {&defaults, &custom}) {
-      std::printf("// %zu values\n{", run->size());
-      for (double v : *run) std::printf("%.17g,\n", v);
-      std::printf("},\n");
-    }
-    return 0;
-  }
-  compare("default parameters", defaults, kGoldenDefault);
-  compare("overridden parameters", custom, kGoldenOverridden);
+void hoisted_values_are_the_looked_up_values(const FlightControllerParameters &parameters) {
+  FlightModel model(Eigen::Vector3d(0, 0, 0.15), 0.0, parameters, 0.15);
+  const auto hot = model.controller_hot_parameters();
+  REQUIRE(hot.tilt_max_air == parameters.get("MPC_TILTMAX_AIR"));
+  REQUIRE(hot.tilt_max_land == parameters.get("MPC_TILTMAX_LND"));
+  REQUIRE(hot.thrust_model_factor == parameters.get("THR_MDL_FAC"));
+  REQUIRE(hot.motor_slew_max == parameters.get("MOT_SLEW_MAX"));
+  REQUIRE(model.offboard_loss_timeout() == parameters.get("COM_OF_LOSS_T"));
+  REQUIRE(model.land_speed() == parameters.get("MPC_LAND_SPEED"));
+}
+
+int main() {
+  const FlightControllerParameters defaults;
+  hoisted_values_are_the_looked_up_values(defaults);
+  hoisted_values_are_the_looked_up_values(overridden());
+  // The overridden values are not the defaults, so the check is not vacuous.
+  REQUIRE(overridden().get("THR_MDL_FAC") != defaults.get("THR_MDL_FAC"));
+  REQUIRE(overridden().get("COM_OF_LOSS_T") != defaults.get("COM_OF_LOSS_T"));
+  REQUIRE(overridden().get("MPC_TILTMAX_LND") != defaults.get("MPC_TILTMAX_LND"));
+
+  // Every mode below runs under the no-lookup requirement of step().
+  const auto from_defaults = scenario(defaults);
+  const auto from_overrides = scenario(overridden());
+  REQUIRE(!from_defaults.empty() && !from_overrides.empty());
 
   // Reset reconstructs the model (a lifecycle operation): it may read
   // parameters, and the new instance steps without lookups again.

@@ -317,6 +317,14 @@ public:
   FlightController(FlightController &&) = default;
   FlightController &operator=(FlightController &&) = default;
   const FlightControllerParameters &parameters() const { return parameters_; }
+  // The values the per-step path reads, taken once from parameters(): the
+  // same floats get() returns. Exposed so a test can prove that equality.
+  struct HotParameters {
+    float tilt_max_air, tilt_max_land, thrust_model_factor, motor_slew_max;
+  };
+  HotParameters hot_parameters() const {
+    return {tilt_max_air_, tilt_max_land_, thrust_model_factor_, motor_slew_max_};
+  }
   void reset() {
     position_.resetIntegral();
     rate_.resetIntegral();

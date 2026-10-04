@@ -117,6 +117,9 @@ public:
   double yaw_rate() const { return yaw_rate_; }
   const FlightControlOutput &control_output() const { return control_output_; }
   const FlightControllerParameters &parameters() const { return controller_.parameters(); }
+  FlightController::HotParameters controller_hot_parameters() const { return controller_.hot_parameters(); }
+  float offboard_loss_timeout() const { return offboard_loss_timeout_; }
+  float land_speed() const { return land_speed_; }
 
   // Inactive provider physics: keep the last motor target, without running
   // FCU control/integrals/stream hysteresis or changing armed/mode state.
