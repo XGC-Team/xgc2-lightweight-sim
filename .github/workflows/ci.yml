@@ -19,7 +19,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         repository: XGC-Team/xgc2-scene-generation
-        ref: restart/pre-optimization-2026-10-06
+        ref: 557aec9529c61636a90056914e3cceedde111e63 # xgc2-scene-generation/noetic
         path: sensor-source
     - name: Build and install the standalone native server
       run: .xgc2/scripts/build_debs_in_docker.sh --sensor-source "$GITHUB_WORKSPACE/sensor-source" --output-dir "$GITHUB_WORKSPACE/debs"
