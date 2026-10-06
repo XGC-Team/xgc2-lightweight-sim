@@ -12,6 +12,7 @@ struct Sample {
   Eigen::Vector3d position{Eigen::Vector3d::Zero()};
   Eigen::Quaterniond orientation{Eigen::Quaterniond::Identity()};
   Clock::time_point submitted;
+  std::shared_ptr<const Frame> bodies;
 };
 struct Sensor {
   std::weak_ptr<Entity> entity;
@@ -19,7 +20,7 @@ struct Sensor {
 #ifdef XSIM_GPU
   xgc2_world_lidar::SensorMetadata gpu_config;
 #endif
-  bool gpu = false;
+  bool gpu = false, with_bodies=false, publish_beams=false;
   Eigen::Vector3d translation{Eigen::Vector3d::Zero()};
   Eigen::Quaterniond rotation{Eigen::Quaterniond::Identity()};
   int64_t period = 100000000, next = 0;
@@ -27,7 +28,8 @@ struct Sensor {
   std::mutex mutex;
   Sample pending, completed;
   bool has_pending = false, busy = false, has_completed = false;
-  std::vector<uint8_t> data, scratch;
+  std::vector<uint8_t> data, scratch, beam_data, beam_scratch;
+  std::vector<xgc2_world_lidar::VehicleBody> others;
   std::atomic<uint64_t> misses{0}, scans{0}, errors{0};
   std::atomic<int64_t> latency_ns{0}, max_latency_ns{0};
   std::string error;
@@ -37,10 +39,11 @@ public:
   explicit Sensors(const Json &scene, unsigned workers = 2);
   ~Sensors();
   std::shared_ptr<Sensor> prepare(const std::shared_ptr<Entity> &);
-  void submit(const State &);
+  void submit(const State &, const World *world=nullptr);
+  std::vector<uint8_t> reference_cloud() const;
   void stop();
   static bool take(const std::shared_ptr<Sensor> &, Sample &,
-                   std::vector<uint8_t> &);
+                   std::vector<uint8_t> &, std::vector<uint8_t> *beams=nullptr);
   Json status() const;
 
 private:
@@ -49,6 +52,8 @@ private:
   double spacing_ = 0.1;
   bool buried_ = false;
   unsigned workers_;
+  std::shared_ptr<const Frame> body_sample_;
+  std::map<std::pair<double,bool>,std::shared_ptr<const xgc2_world_lidar::LidarScene>> sampled_scenes_;
   mutable std::mutex mutex_;
   std::condition_variable wake_;
   std::vector<std::weak_ptr<Sensor>> sensors_;

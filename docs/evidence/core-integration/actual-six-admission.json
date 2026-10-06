@@ -1,0 +1,84 @@
+{
+  "experiments": [
+    {
+      "admission": "passed",
+      "entities": 20,
+      "epoch_ns": 1791271800123456789,
+      "id": "4c69ed15-eff7-4aff-b42a-a3e7e62f5720",
+      "integrated_cpu_sensors": 0,
+      "name": "FLIP Native Slender Twenty",
+      "readiness": "/clock",
+      "scene": {
+        "asset": "Swarm Formation Native Forest World",
+        "simulator": "lightweight"
+      }
+    },
+    {
+      "admission": "passed",
+      "entities": 4,
+      "epoch_ns": 1791271800123456789,
+      "id": "20aa01b1-1b29-4d9d-99cc-06330c436aa5",
+      "integrated_cpu_sensors": 0,
+      "name": "IMPC-DR Native Swap Four",
+      "readiness": "/clock",
+      "scene": {
+        "asset": "impc-dr-native-swap4",
+        "simulator": "lightweight"
+      }
+    },
+    {
+      "admission": "passed",
+      "entities": 20,
+      "epoch_ns": 1791271800123456789,
+      "id": "9ed5f4d9-8407-40a0-ac70-2208a71a384d",
+      "integrated_cpu_sensors": 0,
+      "name": "MAPF-POST Wall Scene Twenty (user reduced count)",
+      "readiness": "/clock",
+      "scene": {
+        "asset": "mapf-post-native-wall32",
+        "simulator": "lightweight"
+      }
+    },
+    {
+      "admission": "passed",
+      "entities": 10,
+      "epoch_ns": 1791271800123456789,
+      "id": "4a403191-3079-484b-9837-43303886e505",
+      "integrated_cpu_sensors": 0,
+      "name": "RMADER Native Circle Ten",
+      "readiness": "/clock",
+      "scene": {
+        "asset": "rmader-native-circle10",
+        "simulator": "lightweight"
+      }
+    },
+    {
+      "admission": "passed",
+      "entities": 7,
+      "epoch_ns": 1791271800123456789,
+      "id": "e3f7b123-b70a-4dbd-8300-e774a146e5e6",
+      "integrated_cpu_sensors": 0,
+      "name": "Swarm Formation Native Seven",
+      "readiness": "/clock",
+      "scene": {
+        "asset": "swarm-formation-native",
+        "simulator": "lightweight"
+      }
+    },
+    {
+      "admission": "passed",
+      "entities": 7,
+      "epoch_ns": 1791271800123456789,
+      "id": "c370caca-1ffb-4ab3-a1f9-66b9e72f315c",
+      "integrated_cpu_sensors": 0,
+      "name": "Swarm of micro flying robots in the wild (Fig8B)",
+      "readiness": "/clock",
+      "scene": {
+        "asset": "ego-planner-v2-original-cloud",
+        "simulator": "lightweight"
+      }
+    }
+  ],
+  "scope": "six actual Experiment spec admission/config generation; no algorithm Run",
+  "source": "/home/lxk/Documents/XGC/Backups/PlatformRollback_2026-10-06_09-40-00/rollback/xsim-live-adoption-20261006/experiments-before.json"
+}

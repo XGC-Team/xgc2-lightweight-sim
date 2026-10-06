@@ -1,25 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-library=/usr/lib/xgc2-lightweight-sim/liblightweight_vehicle.so
-dpkg -s xgc2-lightweight-sim ros-noetic-xgc2-lightweight-sim-msgs >/dev/null
-dpkg-query -S "$library" /usr/share/xgc2-lightweight-sim/fs150_native_flight_model.json
-nm -D --defined-only "$library" | awk '$3 == "xgc_rt_plugin_v1" {found=1} END {exit !found}'
-ldd "$library" | awk '/not found/ {missing=1} END {exit missing ? 1 : 0}'
-if readelf -d "$library" | grep -E 'NEEDED.*(ros|sss)' >/dev/null; then echo 'native model has ROS/SSS link dependency' >&2; exit 1; fi
 set +u
 source /opt/ros/noetic/setup.bash
 set -u
+dpkg -s xsim >/dev/null
+dpkg-query -S /opt/xgc2/xsim/bin/xsim /opt/xgc2/xsim/share/xsim/fs150_native_flight_model.json
+ldd /opt/xgc2/xsim/bin/xsim | awk '/not found/ {missing=1} END {exit missing ? 1 : 0}'
+/opt/xgc2/xsim/bin/xsim --help
 test "$(rospack find xgc2_lightweight_sim_msgs)" = /opt/ros/noetic/share/xgc2_lightweight_sim_msgs
-test -f /opt/ros/noetic/include/xgc2_lightweight_sim_msgs/SetProvider.h
 rossrv show xgc2_lightweight_sim_msgs/SetProvider >/dev/null
-
-WIRE_PATHS=(
-  "/usr/include/xgc-lightweight-sim/simulation_records_v1.h"
-  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesConfig.cmake"
-  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesConfigVersion.cmake"
-  "/usr/share/cmake/XgcLightweightSimInterfaces/XgcLightweightSimInterfacesTargets.cmake"
-)
-for path in "${WIRE_PATHS[@]}"; do
-  test -f "${path}"
-  dpkg-query -S "${path}" | grep -Fxq "xgc2-lightweight-sim: ${path}"
-done
+! dpkg -L xsim | grep -E 'liblightweight_vehicle|libros_io|xgc-rt-host|simulation_records_v1|/opt/ros/noetic/\.catkin$'

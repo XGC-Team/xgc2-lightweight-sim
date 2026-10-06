@@ -1,0 +1,8 @@
+{
+  "scope": "Final common-angle GPU parameter validation; installed package/ldd checked. Original ROS, three-kind replay, CPU/GPU and Core inputs retain their prior test receipts. No live or scientific Run claimed.",
+  "path": "/tmp/xsim-core-integration-20261006/release-final/xsim_1.0.0_amd64.deb",
+  "bytes": 441744,
+  "sha256": "9154aff4dd29ed4652f29a5a7fb0beaaaf8a0bd6bfdc7a8485e58a035d19d321",
+  "final_build_log": "/tmp/xsim-core-integration-20261006/final-metadata-package.log",
+  "final_install_log": "/tmp/xsim-core-integration-20261006/final-package-install.log"
+}

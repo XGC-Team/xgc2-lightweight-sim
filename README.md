@@ -219,10 +219,23 @@ commands, numeric evidence, differences and unverified scope.
 
 The owning `lightweight_vehicle.cpp` Host plugin target and ABI/controller/provider
 Host fixtures are retired. Pure model/PX4 tests remain; replay compiles the exact
-historical source solely as a private test oracle. Legacy simulation DTO headers
-remain exported for external consumers until Root removes those consumers.
-External `package-lightweight-plant.py`, Host graph recipes, ros_io simulation
-edges and Core/workflow launchers still reference the retired plugin. Those are
-explicit subsequent integration/deletion items, not changed or claimed retired
-here. No Core, Adapter production code, frontend, workflow, DB, host installation,
-runtime mount, experiment or parent pin is modified by this server delivery.
+historical source solely as a private test oracle, including its historical DTO
+headers. The production simulation DTO exporter is retired; xsim installs no
+Host/plugin records. Core now launches `/opt/xgc2/xsim/bin/xsim` directly through
+`xsim-world`, with one desired `configJson` and the actual Session `epoch_ns`.
+The old station launcher, Host bundle, manifest generator and graph have been
+removed in the Core integration checkpoint. The original Adapter remains
+unchanged; unrelated external `ros_io` simulation consumers are outside this
+server's production path and must be removed by their owners if still used.
+
+A prepared canonical YAML scene may be supplied through `scene_file`; it is
+converted by the existing geometry library. `pointCloudBackend` in Scene
+parameters selects integrated CPU or original GPU sensing. GPU startup fails
+explicitly when its real implementation/hardware is unavailable. The ROS node
+is `/xsim`; `/clock` is available before any per-robot provider is enabled.
+
+The original GPU kernel uses one `polar_res` for both axes. Its real parameter
+domain therefore requires `h_fov_deg / h_res == v_fov_deg / v_res` (the native
+float angular step). For example, 120° × 60° with 240 × 120 samples is valid;
+240 × 30 for those FOVs is rejected. xsim does not change FOV/resolution or
+substitute CPU to accept a mismatched request. CPU retains its original model.

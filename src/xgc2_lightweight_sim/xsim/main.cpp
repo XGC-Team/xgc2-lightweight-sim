@@ -1,4 +1,5 @@
 #include "ros.hpp"
+#include <yaml-cpp/yaml.h>
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
@@ -13,6 +14,15 @@
 #include <unordered_set>
 namespace xsim {
 namespace {
+Json yaml_json(const YAML::Node& n) {
+  if(n.IsNull())return nullptr;
+  if(n.IsSequence()){Json j=Json::array();for(const auto& x:n)j.push_back(yaml_json(x));return j;}
+  if(n.IsMap()){Json j=Json::object();for(const auto& x:n)j[x.first.as<std::string>()]=yaml_json(x.second);return j;}
+  auto text=n.as<std::string>();
+  if(text=="true")return true;if(text=="false")return false;
+  try {size_t end=0;double value=std::stod(text,&end);if(end==text.size())return value;}catch(const std::exception&){}
+  return text;
+}
 volatile sig_atomic_t stopping = 0;
 void signal_stop(int) { stopping = 1; }
 Json result_json(const Result &r) {
@@ -90,8 +100,10 @@ public:
     chmod(path.c_str(), 0600);
     if (listen(fd_, 32) < 0)
       throw std::runtime_error("socket listen failed");
-    world_.sample_sensor = [this](const State &s) { sensors_.submit(s); };
+    world_.sample_sensor = [this](const State &s) { sensors_.submit(s,&world_); };
     world_.metrics.paused = config.value("paused", false);
+    input_poll_ns_=config.value("input_poll_ns",int64_t(1000000));
+    if(input_poll_ns_<=0 || input_poll_ns_>std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::time_point::max()-Clock::now()).count())throw std::invalid_argument("input_poll_ns must be positive");
     for (const auto &j : config.value("entities", Json::array())) {
       auto t = std::make_shared<Command>();
       t->op = Op::Add;
@@ -102,6 +114,13 @@ public:
         throw std::runtime_error("initial entity rejected");
     }
     latest_ = world_.capture();
+    const auto reference_topic=config.value("reference_cloud_topic",std::string{});
+    if(!reference_topic.empty()) {
+      reference_=node_.advertise<sensor_msgs::PointCloud2>(reference_topic,1,true);
+      reference_message_.height=1;reference_message_.point_step=12;reference_message_.is_dense=true;reference_message_.header.frame_id="world";
+      for(unsigned a=0;a<3;++a){sensor_msgs::PointField f;f.name=std::string(1,"xyz"[a]);f.offset=a*4;f.datatype=sensor_msgs::PointField::FLOAT32;f.count=1;reference_message_.fields.push_back(f);}
+      reference_message_.data=sensors_.reference_cloud();reference_message_.width=reference_message_.data.size()/12;reference_message_.row_step=reference_message_.data.size();
+    }
     if (config.value("publish_clock", false))
       clock_ = node_.advertise<rosgraph_msgs::Clock>("/clock", 1);
   }
@@ -112,8 +131,9 @@ public:
     output_running_ = true;
     output_ = std::thread([this] { output(); });
     pthread_setname_np(pthread_self(), "xsim-input");
+    auto next_input=Clock::now();
     while (!stopping && ros::ok()) {
-      input_queue_.callAvailable(ros::WallDuration(0));
+      if(Clock::now()>=next_input){input_queue_.callAvailable(ros::WallDuration(0));next_input=Clock::now()+std::chrono::nanoseconds(input_poll_ns_);}
       Frame view;
       {
         std::lock_guard<std::mutex> l(view_mutex_);
@@ -166,6 +186,9 @@ private:
   std::string instance_, path_;
   World world_;
   Sensors sensors_;
+  ros::Publisher reference_;
+  sensor_msgs::PointCloud2 reference_message_;
+  bool reference_sent_=false;
   ros::CallbackQueue input_queue_, service_queue_;
   ros::AsyncSpinner service_spinner_;
   ros::NodeHandle node_;
@@ -179,6 +202,7 @@ private:
   std::thread output_;
   std::atomic<bool> output_running_{false};
   Clock::time_point began_ = Clock::now();
+  int64_t input_poll_ns_=1000000;
   std::unique_ptr<Prepared> prepare(const Json &j) {
     auto e = std::make_shared<Entity>(parse_entity(j));
     return prepare(e);
@@ -218,6 +242,7 @@ private:
           clock_.publish(c);
           clock_stamp = frame.stamp;
         }
+        if(reference_ && !reference_sent_){reference_message_.header.stamp.fromNSec(frame.stamp);reference_.publish(reference_message_);reference_sent_=true;}
         // Flush the entire telemetry snapshot before any large cloud. After
         // each cloud, check for newer telemetry again instead of serializing
         // a fleet's clouds ahead of everyone else's heartbeat.
@@ -526,9 +551,9 @@ int main(int argc, char **argv) {
       throw std::runtime_error("cannot read configuration");
     xsim::Json j;
     in >> j;
+    if(j.contains("scene_file") && !j.at("scene_file").get<std::string>().empty()) {j["scene"]["document"]=xsim::yaml_json(YAML::LoadFile(j.at("scene_file").get<std::string>()));}
     ros::init(argc, argv, "xsim",
-              ros::init_options::NoSigintHandler |
-                  ros::init_options::AnonymousName);
+              ros::init_options::NoSigintHandler);
     signal(SIGINT, xsim::signal_stop);
     signal(SIGTERM, xsim::signal_stop);
     xsim::Server server(j, socket);

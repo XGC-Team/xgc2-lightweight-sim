@@ -114,6 +114,11 @@ def main():
         subscribe('fs150.raw_imu','/fs150/mavros/imu/data_raw',Imu)
         for kind in ('fs150','scout','mecanum'):
             subscribe(kind+'.mocap_velocity','/vrpn_client_node/'+kind+'/twist',TwistStamped)
+        # Wait for both legs of the original Adapter projection fixture.
+        # A paused world emits a stamp once; elapsed sleep is not a TCPROS
+        # connection acknowledgement and can lose the first checkpoint.
+        from std_msgs.msg import Bool
+        assert rospy.wait_for_message('/xsim_private/canonical_ready',Bool,timeout=8).data
         providers={}
         for kind in ('fs150','scout','mecanum'):
             rospy.wait_for_service('/'+kind+'/simulation/provider',5)

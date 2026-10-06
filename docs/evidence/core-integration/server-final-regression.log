@@ -1,0 +1,125 @@
+-- Using CATKIN_DEVEL_PREFIX: /work/xsim/devel
+-- Using CMAKE_PREFIX_PATH: /work/install;/opt/ros/noetic
+-- This workspace overlays: /work/install;/opt/ros/noetic
+-- Found PythonInterp: /usr/bin/python3 (found suitable version "3.8.10", minimum required is "3") 
+-- Using PYTHON_EXECUTABLE: /usr/bin/python3
+-- Using Debian Python package layout
+-- Using empy: /usr/lib/python3/dist-packages/em.py
+-- Using CATKIN_ENABLE_TESTING: ON
+-- Call enable_testing()
+-- Using CATKIN_TEST_RESULTS_DIR: /work/xsim/test_results
+-- Forcing gtest/gmock from source, though one was otherwise available.
+-- Found gtest sources under '/usr/src/googletest': gtests will be built
+-- Found gmock sources under '/usr/src/googletest': gmock will be built
+-- Found PythonInterp: /usr/bin/python3 (found version "3.8.10") 
+-- Using Python nosetests: /usr/bin/nosetests3
+-- catkin 0.8.12
+-- BUILD_SHARED_LIBS is on
+-- Using these message generators: gencpp;geneus;genlisp;gennodejs;genpy
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /work/xsim
+[ 19%] Built target px4_v1_12_3
+[ 27%] Built target xsim_canonical_fixture
+Scanning dependencies of target xsim_world
+[ 30%] Building CXX object CMakeFiles/xsim_world.dir/xsim/world.cpp.o
+[ 33%] Linking CXX static library libxsim_world.a
+[ 33%] Built target xsim_world
+Scanning dependencies of target xsim_sensors
+Scanning dependencies of target xsim_replay
+[ 38%] Building CXX object CMakeFiles/xsim_replay.dir/source/ros1/simulator/lightweight-sim/tests/replay.cpp.o
+[ 38%] Building CXX object CMakeFiles/xsim_sensors.dir/xsim/sensors.cpp.o
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/sensors.cpp: In constructor ‘xsim::Sensors::Sensors(const Json&, unsigned int)’:
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/sensors.cpp:40:9: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+   40 |         if(g.contains("size"))p.size=v3(g.at("size"));p.radius=g.value("radius",0.0);p.height=g.value("height",0.0);
+      |         ^~
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/sensors.cpp:40:55: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+   40 |         if(g.contains("size"))p.size=v3(g.at("size"));p.radius=g.value("radius",0.0);p.height=g.value("height",0.0);
+      |                                                       ^
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/sensors.cpp:41:9: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+   41 |         if(g.contains("vertices"))for(const auto& v:g.at("vertices"))p.vertices.push_back(v3(v));d.parts.push_back(p);
+      |         ^~
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/sensors.cpp:41:98: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+   41 |         if(g.contains("vertices"))for(const auto& v:g.at("vertices"))p.vertices.push_back(v3(v));d.parts.push_back(p);
+      |                                                                                                  ^
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/sensors.cpp: In member function ‘void xsim::Sensors::submit(const xsim::State&, const xsim::World*)’:
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/sensors.cpp:229:29: warning: missing initializer for member ‘xsim::Sample::bodies’ [-Wmissing-field-initializers]
+  229 |                 Clock::now()};
+      |                             ^
+[ 41%] Linking CXX static library libxsim_sensors.a
+[ 41%] Built target xsim_sensors
+Scanning dependencies of target xsim_baseline_reference
+[ 44%] Building CXX object CMakeFiles/xsim_baseline_reference.dir/work/src/xgc2_lightweight_sim/lightweight_vehicle.cpp.o
+[ 47%] Linking CXX executable xsim_replay
+[ 47%] Built target xsim_replay
+[ 50%] Linking CXX executable px4_setpoint_test
+[ 52%] Built target px4_setpoint_test
+[ 55%] Linking CXX executable flight_controller_test
+[ 58%] Built target flight_controller_test
+[ 61%] Linking CXX executable rigid_body_test
+[ 63%] Built target rigid_body_test
+[ 66%] Linking CXX executable ground_contact_test
+[ 69%] Built target ground_contact_test
+[ 72%] Linking CXX executable model_test
+[ 75%] Built target model_test
+Scanning dependencies of target xsim
+[ 77%] Building CXX object CMakeFiles/xsim.dir/xsim/main.cpp.o
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/main.cpp: In function ‘xsim::Json xsim::{anonymous}::yaml_json(const YAML::Node&)’:
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/main.cpp:22:3: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+   22 |   if(text=="true")return true;if(text=="false")return false;
+      |   ^~
+/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/xsim/main.cpp:22:31: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+   22 |   if(text=="true")return true;if(text=="false")return false;
+      |                               ^~
+[ 80%] Linking CXX shared library libxsim_baseline_reference.so
+[ 80%] Built target xsim_baseline_reference
+[ 83%] Building CXX object CMakeFiles/xsim.dir/xsim/ros.cpp.o
+Scanning dependencies of target xsim_slow_service_test
+[ 86%] Building CXX object CMakeFiles/xsim_slow_service_test.dir/source/ros1/simulator/lightweight-sim/tests/slow_service_test.cpp.o
+[ 88%] Linking CXX executable xsim
+[ 88%] Built target xsim
+[ 91%] Building CXX object CMakeFiles/xsim_slow_service_test.dir/xsim/ros.cpp.o
+Scanning dependencies of target xsim_world_test
+[ 94%] Building CXX object CMakeFiles/xsim_world_test.dir/source/ros1/simulator/lightweight-sim/tests/world_test.cpp.o
+[ 97%] Linking CXX executable xsim_world_test
+[ 97%] Built target xsim_world_test
+[100%] Linking CXX executable xsim_slow_service_test
+[100%] Built target xsim_slow_service_test
+Test project /work/xsim
+      Start  1: lightweight_rigid_body
+ 1/10 Test  #1: lightweight_rigid_body ...........   Passed    0.01 sec
+      Start  2: lightweight_flight_controller
+ 2/10 Test  #2: lightweight_flight_controller ....   Passed    0.03 sec
+      Start  3: lightweight_model
+ 3/10 Test  #3: lightweight_model ................   Passed    0.26 sec
+      Start  4: lightweight_px4_setpoint
+ 4/10 Test  #4: lightweight_px4_setpoint .........   Passed    0.00 sec
+      Start  5: lightweight_ground_contact
+ 5/10 Test  #5: lightweight_ground_contact .......   Passed    0.00 sec
+      Start  6: xsim_replay_fs150
+ 6/10 Test  #6: xsim_replay_fs150 ................   Passed    0.07 sec
+      Start  7: xsim_replay_scout
+ 7/10 Test  #7: xsim_replay_scout ................   Passed    0.01 sec
+      Start  8: xsim_replay_mecanum
+ 8/10 Test  #8: xsim_replay_mecanum ..............   Passed    0.01 sec
+      Start  9: xsim_world
+ 9/10 Test  #9: xsim_world .......................   Passed    0.45 sec
+      Start 10: xsim_ros_contract
+10/10 Test #10: xsim_ros_contract ................***Failed   10.91 sec
+Traceback (most recent call last):
+  File "/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/../../tests/ros_integration.py", line 289, in <module>
+    if __name__=='__main__':main()
+  File "/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/../../tests/ros_integration.py", line 141, in main
+    until(lambda: sample(kind+'.canonical') and sample(kind+'.canonical').header.stamp.to_nsec()==stamp, kind+' original Adapter projection')
+  File "/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/../../tests/ros_integration.py", line 47, in until
+    raise AssertionError('timeout: '+label)
+AssertionError: timeout: fs150 original Adapter projection
+
+
+90% tests passed, 1 tests failed out of 10
+
+Total Test time (real) =  11.78 sec
+
+The following tests FAILED:
+	 10 - xsim_ros_contract (Failed)
+Errors while running CTest

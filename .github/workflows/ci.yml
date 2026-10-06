@@ -1,61 +1,36 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [main, restart/pre-optimization-2026-10-06]
   pull_request:
     branches: [main]
-permissions:
-  contents: read
-defaults:
-  run:
-    shell: bash
+permissions: {contents: read}
 jobs:
-  interfaces:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build the one architecture-independent interface Deb
-        run: .xgc2/scripts/build_debs_in_docker.sh --interfaces-only --work-dir "$RUNNER_TEMP/lightweight-interface" --output-dir "$GITHUB_WORKSPACE/interfaces"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: lightweight-interface-bytes
-          path: interfaces/*.deb
-          retention-days: 14
   build-debs:
-    name: Build and check native Debs (${{ matrix.arch }})
-    needs: interfaces
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {arch: amd64, runner: ubuntu-latest}
-          - {arch: arm64, runner: ubuntu-24.04-arm}
+        - {arch: amd64, runner: ubuntu-latest}
+        - {arch: arm64, runner: ubuntu-24.04-arm}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: lightweight-interface-bytes
-          path: interfaces
-      - name: Build, test, install and run native payload negative controls
-        run: |
-          interface_deb="$(find interfaces -name '*.deb' -type f)"
-          test -n "$interface_deb"
-          .xgc2/scripts/build_debs_in_docker.sh --interface-deb "$interface_deb" --work-dir "$RUNNER_TEMP/lightweight-${{ matrix.arch }}" --output-dir "$GITHUB_WORKSPACE/debs"
-      - name: Create strict trusted build manifest
-        run: |
-          version="$(awk -F': *' '/^version:/ {print $2; exit}' .xgc2/product.yml)"
-          python3 .xgc2/scripts/xgc2_artifact_manifest.py build \
-            --deb-dir debs --output-dir .ci/build-manifests \
-            --product xgc2-lightweight-sim --product-version "$version" \
-            --distribution focal --architecture "${{ matrix.arch }}" \
-            --source-sha "$GITHUB_SHA" --ci-run-id "$GITHUB_RUN_ID" \
-            --ci-workflow "$GITHUB_WORKFLOW" --ci-workflow-ref "$GITHUB_WORKFLOW_REF"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xgc2-lightweight-sim-debs-${{ matrix.arch }}
-          path: |
-            debs/*.deb
-            .ci/build-manifests/*.json
-          retention-days: 14
-          include-hidden-files: true
+    - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+      with:
+        repository: XGC-Team/xgc2-scene-generation
+        ref: restart/pre-optimization-2026-10-06
+        path: sensor-source
+    - name: Build and install the standalone native server
+      run: .xgc2/scripts/build_debs_in_docker.sh --sensor-source "$GITHUB_WORKSPACE/sensor-source" --output-dir "$GITHUB_WORKSPACE/debs"
+    - name: Create the normal build artifact manifest
+      run: |
+        version="$(awk -F': *' '/^version:/ {print $2;exit}' .xgc2/product.yml)"
+        python3 .xgc2/scripts/xgc2_artifact_manifest.py build --deb-dir debs --output-dir .ci/build-manifests --product xsim --product-version "$version" --distribution focal --architecture "${{ matrix.arch }}" --source-sha "$GITHUB_SHA" --ci-run-id "$GITHUB_RUN_ID" --ci-workflow "$GITHUB_WORKFLOW" --ci-workflow-ref "$GITHUB_WORKFLOW_REF"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: xsim-debs-${{ matrix.arch }}
+        path: |
+          debs/*.deb
+          .ci/build-manifests/*.json
+        include-hidden-files: true

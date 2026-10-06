@@ -1,0 +1,32 @@
+--- FAIL: TestWorldPreparationResolvesAndTransfersBeforeCallingTarget (9.15s)
+    --- FAIL: TestWorldPreparationResolvesAndTransfersBeforeCallingTarget/lightweight (0.22s)
+        world_preparation_test.go:244: expected one independent ROS and one scene call: [{configured [{xgc-world-runtime xgc-world-runtime start-ros-services false supervised keep-experiment []}] wait}]
+            run=world-lightweight status=failed reason=node runtime-default-other-simulator failed
+              called kind=trigger.automation-call status=succeeded params=
+              needs-scene kind=condition status=succeeded params=
+              runtime-default-disabled kind=automation.call-bound-each status=skipped params=
+              runtime-default-other-simulator kind=automation.call-bound-each status=failed params=
+              runtime-direct kind=automation.call-bound-each status=skipped params=
+              runtime-independent kind=automation.call-bound-each status=succeeded params=
+              runtime-transferred kind=automation.call-bound-each status=skipped params=
+              scene-context kind=merge status=succeeded params=
+              scene-resolve kind=simulation.scene-resolve status=succeeded params={"scene":{"asset":"lightweight","parameters":{},"simulator":"lightweight"}}
+              session-context kind=experiment.session.context status=succeeded params=
+              should-transfer kind=condition status=skipped params=
+              simulator-is-gazebo kind=condition status=succeeded params=
+              transfer kind=files.transfer status=skipped params=
+              attempt 6216adb6-8f2f-53f9-ab44-6317e41dfa4e phase=execution status=failed error=orchestration: parameter binding "/bindings/0/inputOverrides/xsimSceneFile": reference "$inputs[\"scene-resolve\"].sceneFile" property "scene-resolve" does not exist
+
+2026/10/06 17:07:57 /home/lxk/Dev/xgc2-harness/devops/products/xgc2/core-xgc/internal/process/store.go:105 context canceled
+[0.007ms] [rows:0] SELECT * FROM `execution_process_instances` WHERE 
+			desired_state <> "stopped" OR observed_state <> "stopped" OR next_restart_at IS NOT NULL OR
+			handle IS NOT NULL OR
+			pending_configuration_digest <> '' OR pending_command_id <> '' OR
+			pending_target_id <> '' OR pending_driver <> '' OR
+			pending_parameters IS NOT NULL OR pending_target_config IS NOT NULL ORDER BY created_at ASC, id ASC LIMIT 1000
+
+2026/10/06 17:08:12 /home/lxk/Dev/xgc2-harness/devops/products/xgc2/core-xgc/internal/workflow/storage/runtime_release_redrive_store.go:51 context canceled
+[0.027ms] [rows:-] SELECT binding.* FROM execution_orchestration_runtime_bindings AS binding JOIN execution_orchestration_runs AS run ON run.id = binding.run_id WHERE (binding.state IN ("active","stopping") AND binding.relation <> "detached") AND (binding.owner_type = "run" AND binding.owner_id = binding.run_id) AND run.status IN ("succeeded","failed","canceled","stopped","rejected") ORDER BY binding.id ASC LIMIT 100
+FAIL
+FAIL	xgc2/core-xgc/internal/executioncatalog	27.071s
+FAIL

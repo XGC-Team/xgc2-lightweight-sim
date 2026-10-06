@@ -42,6 +42,12 @@ int main() {
   Frame output;std::vector<int64_t> stamps;
   for(int k=0;k<20;++k){rate_grid.advance();if(rate_grid.take_frame(output))stamps.push_back(output.stamp-rate_grid.epoch);}
   assert((stamps==std::vector<int64_t>{12000000,21000000,30000000,42000000,51000000,60000000}));
+  // Positive authored timing has no Host-round divisibility/capacity gate.
+  World slow_grid(1700000000000000000LL,201000000,5000000000LL);
+  slow_grid.advance();assert(slow_grid.metrics.sim_ns==1700000000201000000LL);
+  World fine_output(1700000000000000000LL,10000000,3000000);
+  fine_output.advance();Frame fine;assert(fine_output.take_frame(fine));assert(fine.stamp==fine_output.epoch+10000000);
+  bool overflow=false;try{World invalid(INT64_MAX-1000000,1000000,10000000);}catch(const std::invalid_argument&){overflow=true;}assert(overflow);
   World paced(1700000000000000000LL, 10000000, 10000000);
   const auto wall_start = Clock::now();
   paced.start();

@@ -28,7 +28,7 @@ struct RosEntity {
   World &world;
   ros::NodeHandle input, services;
   ros::Publisher truth, mocap, mocap_velocity, pose, velocity, imu, raw_imu,
-      state, extended, target, odom, cloud;
+      state, extended, target, odom, cloud, beams;
   ros::Subscriber pva_sub, attitude_sub, velocity_sub;
   ros::ServiceServer provider, reset, arm, mode, command;
   uint64_t bound_generation = UINT64_MAX;
@@ -41,7 +41,7 @@ struct RosEntity {
   std::string last_mode;
   int64_t last_stamp = -1;
   uint64_t last_generation = UINT64_MAX;
-  sensor_msgs::PointCloud2 cloud_message;
+  sensor_msgs::PointCloud2 cloud_message, beam_message;
   std::string topic(const std::string &, const std::string &) const;
 };
 } // namespace xsim

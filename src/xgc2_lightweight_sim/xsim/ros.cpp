@@ -81,18 +81,24 @@ RosEntity::RosEntity(const std::shared_ptr<Entity> &e, World &w,
   }
   if (e->sensor) {
     cloud = input.advertise<sensor_msgs::PointCloud2>(e->sensor->topic, 1);
-    cloud_message.fields.resize(e->sensor->gpu ? 4 : 3);
+    cloud_message.fields.resize((e->sensor->gpu || e->sensor->with_bodies) ? 4 : 3);
     for (unsigned a = 0; a < cloud_message.fields.size(); ++a) {
       auto &f = cloud_message.fields[a];
-      f.name = a == 3 ? "intensity" : std::string(1, "xyz"[a]);
+      f.name = a == 3 ? (e->sensor->gpu ? "intensity" : "vehicle_id") : std::string(1, "xyz"[a]);
       f.offset = a * 4;
-      f.datatype = sensor_msgs::PointField::FLOAT32;
+      f.datatype = a==3 && e->sensor->with_bodies ? sensor_msgs::PointField::INT32 : sensor_msgs::PointField::FLOAT32;
       f.count = 1;
     }
-    cloud_message.point_step = e->sensor->gpu ? 16 : 12;
+    cloud_message.point_step = (e->sensor->gpu || e->sensor->with_bodies) ? 16 : 12;
     cloud_message.height = 1;
     cloud_message.is_dense = true;
     cloud_message.is_bigendian = false;
+    if(e->sensor->publish_beams){
+      beams=input.advertise<sensor_msgs::PointCloud2>("/"+e->config.name+"/simple_lidar/beams",1);
+      beam_message.height=1;beam_message.is_dense=true;beam_message.point_step=e->sensor->with_bodies?36:32;
+      const char* names[]={"x","y","z","dx","dy","dz","range","hit","vehicle_id"};
+      for(unsigned a=0;a<(e->sensor->with_bodies?9u:8u);++a){sensor_msgs::PointField f;f.name=names[a];f.offset=a*4;f.datatype=a==8?sensor_msgs::PointField::INT32:sensor_msgs::PointField::FLOAT32;f.count=1;beam_message.fields.push_back(f);}
+    }
   }
   boost::function<bool(xgc2_lightweight_sim_msgs::SetProvider::Request &,
                        xgc2_lightweight_sim_msgs::SetProvider::Response &)>
@@ -396,12 +402,13 @@ bool RosEntity::publish_sensor() {
   auto e=entity.lock();
   if(!e || !e->alive || !e->enabled || !e->sensor)return false;
   Sample sample;
-  if(!Sensors::take(e->sensor,sample,cloud_message.data))return false;
+  if(!Sensors::take(e->sensor,sample,cloud_message.data,&beam_message.data))return false;
   cloud_message.header.stamp.fromNSec(sample.stamp);
   cloud_message.header.frame_id=e->sensor->frame;
   cloud_message.width=cloud_message.data.size()/cloud_message.point_step;
   cloud_message.row_step=cloud_message.width*cloud_message.point_step;
   cloud.publish(cloud_message);
+  if(beams){beam_message.header=cloud_message.header;beam_message.width=beam_message.data.size()/beam_message.point_step;beam_message.row_step=beam_message.data.size();beams.publish(beam_message);}
   return true;
 }
 } // namespace xsim

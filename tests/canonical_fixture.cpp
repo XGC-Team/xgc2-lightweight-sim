@@ -4,6 +4,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <ros/ros.h>
+#include <std_msgs/Bool.h>
 #include <xgc2_ros1_robot_adapter/localization_projection.hpp>
 int main(int argc, char **argv) {
   ros::init(argc, argv, "xsim_canonical_fixture");
@@ -35,6 +36,13 @@ int main(int argc, char **argv) {
           if (xgc2_ros1_robot_adapter::validLocalizationTwist(*source))
             twists[i].publish(*source);
         });
+  }
+  auto ready=n.advertise<std_msgs::Bool>("/xsim_private/canonical_ready",1,true);
+  while(ros::ok()) {
+    ros::spinOnce();bool connected=true;
+    for(size_t i=0;i<names.size();++i)connected=connected&&ps[i].getNumPublishers()>0&&ts[i].getNumPublishers()>0&&poses[i].getNumSubscribers()>0&&twists[i].getNumSubscribers()>0;
+    if(connected){std_msgs::Bool marker;marker.data=true;ready.publish(marker);break;}
+    ros::WallDuration(.005).sleep();
   }
   ros::spin();
   return 0;

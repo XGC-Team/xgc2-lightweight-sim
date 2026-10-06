@@ -1,0 +1,220 @@
+{
+  "absolute_tolerance": 1e-10,
+  "baseline": "fed3fdc3d6625d9020d363bb5b9c3c8f8f2c72a6",
+  "checkpoints": [
+    {
+      "generation": 1,
+      "position": [
+        2.203935419513241,
+        -0.797660338730315,
+        0.9434450431867437
+      ],
+      "step": 1000,
+      "velocity": [
+        0.3303765622822412,
+        0.3288997240555983,
+        0.5186087507391937
+      ]
+    },
+    {
+      "generation": 1,
+      "position": [
+        2.4859012553404796,
+        -0.5165046483252452,
+        1.1648268126339347
+      ],
+      "step": 2000,
+      "velocity": [
+        0.18825152834539338,
+        0.18845339608458234,
+        0.04314026494940185
+      ]
+    },
+    {
+      "generation": 1,
+      "position": [
+        2.5692561508059217,
+        -0.43211071824050973,
+        1.151740862735399
+      ],
+      "step": 3000,
+      "velocity": [
+        -0.0015227330687096177,
+        -9.469956523938927e-06,
+        -0.04213038178808915
+      ]
+    },
+    {
+      "generation": 1,
+      "position": [
+        2.1402384971057575,
+        -0.4672996745369716,
+        1.1075466203372415
+      ],
+      "step": 4000,
+      "velocity": [
+        -0.724761711024133,
+        -0.04924390153573483,
+        -0.04705719197398804
+      ]
+    },
+    {
+      "generation": 1,
+      "position": [
+        1.5330950551506564,
+        -0.5040101336340613,
+        1.0691877953399702
+      ],
+      "step": 5000,
+      "velocity": [
+        -0.395403720909757,
+        -0.02037239462325121,
+        -0.03129615753494912
+      ]
+    },
+    {
+      "generation": 1,
+      "position": [
+        1.3622754565383786,
+        -0.5105225199481606,
+        1.0433365308733487
+      ],
+      "step": 6000,
+      "velocity": [
+        0.00806472164140719,
+        0.0036018860459312517,
+        -0.020714133093617658
+      ]
+    },
+    {
+      "generation": 2,
+      "position": [
+        1.9463774211474376,
+        -0.9443872139538668,
+        0.5439731634076463
+      ],
+      "step": 7000,
+      "velocity": [
+        -0.22688941261955115,
+        0.2300424010770666,
+        1.119052445882399
+      ]
+    },
+    {
+      "generation": 2,
+      "position": [
+        1.6406001389292781,
+        -0.6374780113806277,
+        1.1110521208648898
+      ],
+      "step": 8000,
+      "velocity": [
+        -0.2948121302451665,
+        0.29427989687253164,
+        0.19211216403704623
+      ]
+    }
+  ],
+  "dt_ns": 1000000,
+  "epoch_ns": 1700000000000000000,
+  "events": [
+    {
+      "operation": "arm",
+      "step": 0,
+      "xsim_reason": 0,
+      "xsim_success": true
+    },
+    {
+      "baseline_result": 0,
+      "request_id": 1,
+      "step": 0,
+      "xsim_result": 0
+    },
+    {
+      "baseline_result": 0,
+      "request_id": 2,
+      "step": 0,
+      "xsim_result": 0
+    },
+    {
+      "baseline_last_fcu_result": 0,
+      "step": 0
+    },
+    {
+      "operation": "airborne_disarm",
+      "step": 4000,
+      "xsim_reason": 2,
+      "xsim_success": false
+    },
+    {
+      "baseline_result": 2,
+      "request_id": 4001,
+      "step": 4000,
+      "xsim_result": 2
+    },
+    {
+      "baseline_last_fcu_result": 2,
+      "step": 4000
+    },
+    {
+      "operation": "unsupported_mode",
+      "step": 4500,
+      "xsim_reason": 3,
+      "xsim_success": false
+    },
+    {
+      "baseline_result": 3,
+      "request_id": 4501,
+      "step": 4500,
+      "xsim_result": 3
+    },
+    {
+      "baseline_last_fcu_result": 3,
+      "step": 4500
+    },
+    {
+      "operation": "arm",
+      "step": 6500,
+      "xsim_reason": 0,
+      "xsim_success": true
+    },
+    {
+      "baseline_result": 0,
+      "request_id": 6501,
+      "step": 6500,
+      "xsim_result": 0
+    },
+    {
+      "baseline_result": 0,
+      "request_id": 6502,
+      "step": 6500,
+      "xsim_result": 0
+    },
+    {
+      "baseline_last_fcu_result": 0,
+      "step": 6500
+    }
+  ],
+  "initial_pose": [
+    2,
+    -1,
+    0,
+    0.35
+  ],
+  "kind": "fs150",
+  "max_absolute_error": {
+    "angular_velocity": 0.0,
+    "imu_gyro": 0.0,
+    "imu_specific_force": 0.0,
+    "position": 0.0,
+    "quaternion": 0.0,
+    "stamp": 0.0,
+    "target_quaternion": 0.0,
+    "target_rate": 0.0,
+    "thrust": 0.0,
+    "velocity": 0.0
+  },
+  "noise": "disabled in both",
+  "result": "PASS",
+  "steps": 8000
+}

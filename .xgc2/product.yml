@@ -1,55 +1,37 @@
 schema: xgc2.product.v1
-id: xgc2-lightweight-sim
-name: XGC2 Lightweight Simulator
-version: 0.3.0-1
+id: xsim
+name: xsim
+version: 1.0.0
 kind: ros1-apt
-summary: Independent native rigid-body and FCU simulator with its minimal ROS1 lifecycle interface.
+summary: Standalone ECS world with original FS150/Scout/Mecanum ROS interfaces and integrated CPU/GPU sensing.
 ros:
   distro: noetic
   packages:
   - xgc2_lightweight_sim_msgs
 apt:
   distribution: focal
-  install:
-  - xgc2-lightweight-sim
-  - ros-noetic-xgc2-lightweight-sim-msgs
-  packages:
-  - xgc2-lightweight-sim
-  - ros-noetic-xgc2-lightweight-sim-msgs
-  package_architectures:
-    ros-noetic-xgc2-lightweight-sim-msgs:
-    - amd64
-    - arm64
-  depends:
-  - ros-noetic-message-runtime
+  install: [xsim]
+  packages: [xsim]
+  depends: [ros-noetic-roscpp, ros-noetic-mavros-msgs, ros-noetic-rosgraph-msgs, libglfw3]
 usage:
-  install: sudo apt install xgc2-lightweight-sim ros-noetic-xgc2-lightweight-sim-msgs
-  smoke_test: test -f /usr/lib/xgc2-lightweight-sim/liblightweight_vehicle.so
-  notes: The native model has no ROS or SSS runtime dependency. FS150 build inputs are immutable owner bytes pinned by .xgc2/build-inputs/fs150.lock.json.
+  install: sudo apt install xsim
+  smoke_test: /opt/xgc2/xsim/bin/xsim --help
+  notes: Source Noetic before direct CLI use. One desired world JSON supplies the actual Session epoch; one Unix control socket serves management. GPU has no CPU fallback. The sensor implementation is built from the explicit convex_geometry checkout, never copied into this owner.
 ownership:
   paths:
-  - /usr/include/xgc-lightweight-sim
-  - /usr/share/cmake/XgcLightweightSimInterfaces
-  - /usr/lib/xgc2-lightweight-sim
-  - /usr/share/xgc2-lightweight-sim
+  - /opt/xgc2/xsim
   - /opt/ros/noetic/share/xgc2_lightweight_sim_msgs
   - /opt/ros/noetic/include/xgc2_lightweight_sim_msgs
   - /opt/ros/noetic/lib/python3/dist-packages/xgc2_lightweight_sim_msgs
-  - /opt/ros/noetic/share/common-lisp/ros/xgc2_lightweight_sim_msgs
-  - /opt/ros/noetic/share/gennodejs/ros/xgc2_lightweight_sim_msgs
-  - /opt/ros/noetic/share/roseus/ros/xgc2_lightweight_sim_msgs
+  - /opt/ros/noetic/lib/pkgconfig/xgc2_lightweight_sim_msgs.pc
 release:
   repository: XGC-Team/xgc2-lightweight-sim
-  ref: main
+  ref: restart/pre-optimization-2026-10-06
   workflow: release.yml
   ci_workflow: ci.yml
-  requires:
-  - libxgc2-runtime-sdk-dev
-  - libxgc2-math-dev
-  - libxgc2-robotics-interfaces-dev
+  requires: [libxgc2-math-dev, libxgc2-robotics-interfaces-dev]
   dependency_policy:
-    libxgc2-runtime-sdk-dev: rebuild
     libxgc2-math-dev: verify
     libxgc2-robotics-interfaces-dev: rebuild
   apt_versions:
-    focal: 0.3.0-1
+    focal: 1.0.0

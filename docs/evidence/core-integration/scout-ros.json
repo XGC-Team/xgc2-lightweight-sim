@@ -1,0 +1,138 @@
+{
+  "max_abs_pose_velocity_error": 2.48245868306185e-13,
+  "tolerance": 1e-09,
+  "checkpoints": [
+    {
+      "step": 1000,
+      "stamp_ns": 1700000001920000000,
+      "position": [
+        2.929986804701587,
+        -0.6605283164675972,
+        0.0
+      ],
+      "velocity": [
+        0.9393727128473783,
+        0.3428978074554513,
+        0.0
+      ]
+    },
+    {
+      "step": 2000,
+      "stamp_ns": 1700000002920000000,
+      "position": [
+        3.7495226772918797,
+        -0.10580720038259175,
+        0.0
+      ],
+      "velocity": [
+        0.6637281695670197,
+        0.7479738744924266,
+        0.0
+      ]
+    },
+    {
+      "step": 3000,
+      "stamp_ns": 1700000003920000000,
+      "position": [
+        3.7561357385875462,
+        -0.09831715301858951,
+        0.0
+      ],
+      "velocity": [
+        2.482738313363202e-87,
+        2.8261822404866473e-87,
+        0.0
+      ]
+    },
+    {
+      "step": 4000,
+      "stamp_ns": 1700000004920000000,
+      "position": [
+        3.1027469307115902,
+        -0.8420910074810576,
+        0.0
+      ],
+      "velocity": [
+        -0.6599831458850195,
+        -0.7512804051402592,
+        0.0
+      ]
+    },
+    {
+      "step": 5000,
+      "stamp_ns": 1700000005920000000,
+      "position": [
+        3.096152592702545,
+        -0.8495975581588378,
+        0.0
+      ],
+      "velocity": [
+        -2.4827383133632077e-87,
+        -2.8261822404866536e-87,
+        0.0
+      ]
+    },
+    {
+      "step": 6000,
+      "stamp_ns": 1700000006920000000,
+      "position": [
+        3.643411829916098,
+        -0.43184043590365934,
+        0.0
+      ],
+      "velocity": [
+        0.6290910510215695,
+        0.30699258871278384,
+        0.0
+      ]
+    },
+    {
+      "step": 7000,
+      "stamp_ns": 1700000007920000000,
+      "position": [
+        3.649703617003424,
+        -0.42878563434038985,
+        0.0
+      ],
+      "velocity": [
+        2.3711244353354277e-87,
+        1.1453836696959887e-87,
+        0.0
+      ]
+    },
+    {
+      "step": 8000,
+      "stamp_ns": 1700000008920000000,
+      "position": [
+        3.649703617003424,
+        -0.42878563434038985,
+        0.0
+      ],
+      "velocity": [
+        3.281390870521661e-174,
+        1.585092482273429e-174,
+        0.0
+      ]
+    }
+  ],
+  "provider_initial_generation": 1,
+  "reset_generation": 2,
+  "stale_provider_reason": 1,
+  "reset_position": [
+    2.0,
+    -1.0,
+    0.0
+  ],
+  "world_frame": "world",
+  "odometry_child_frame": "base_link",
+  "result": "PASS",
+  "baseline": "fed3fdc3d6625d9020d363bb5b9c3c8f8f2c72a6",
+  "scope": "Private ROS source/MAVROS/UGV contract plus original unchanged Adapter localization_projection.cpp in private ROS fixture. Full supervised production Adapter lifecycle not executed.",
+  "canonical_projection_offset": [
+    0.4,
+    -0.2,
+    0.3
+  ],
+  "canonical_projection_max_error_below": 1e-12,
+  "adapter_modified": false
+}

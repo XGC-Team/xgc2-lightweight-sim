@@ -63,7 +63,7 @@ Model prepare_model(const Config &c) {
 World::World(int64_t e, int64_t d, int64_t o, unsigned c)
     : epoch(e), dt(d), output_period(o), time_(e), next_output_(e),
       catchup_(c) {
-  if (e <= 0 || d <= 0 || d > 100000000 || o < d || !c || e > INT64_MAX - o)
+  if (e <= 0 || d <= 0 || o <= 0 || d > INT64_MAX-e || !c || e > INT64_MAX - o)
     throw std::invalid_argument(
         "explicit positive session epoch, step and output period required");
   metrics.sim_ns = e;
@@ -144,7 +144,7 @@ Result World::apply(Command &c) {
     return r;
   }
   if (c.op == Op::Step) {
-    r.success = metrics.paused && c.steps > 0 && stepping_ == 0;
+    r.success = metrics.paused && c.steps > 0 && stepping_ == 0 && c.steps<=uint64_t((INT64_MAX-time_)/dt);
     if (r.success)
       stepping_ = c.steps;
     return r;
@@ -379,6 +379,7 @@ void World::boundary() {
 }
 void World::advance() {
   const auto begin = Clock::now();
+  if(steps_>=uint64_t((INT64_MAX-epoch)/dt)) {metrics.paused=true;return;}
   const double h = double(dt) * 1e-9;
   for (size_t i = 0; i < flights_.size(); ++i) {
     auto &f = flights_[i];
@@ -406,7 +407,8 @@ void World::advance() {
         sample_sensor(state(s.first, s.second));
   if (time_ >= next_output_) {
     emit();
-    next_output_ = epoch + ((time_ - epoch) / output_period + 1) * output_period;
+    const auto next_index=(time_-epoch)/output_period+1;
+    next_output_=next_index>(INT64_MAX-epoch)/output_period?INT64_MAX:epoch+next_index*output_period;
   }
   if (stepping_ && --stepping_ == 0) {
     for (auto &t : step_waiters_) {

@@ -1,0 +1,25 @@
+{
+  "artifacts": [
+    {
+      "path": "/tmp/xsim-core-integration-20261006/release/xsim_1.0.0_amd64.deb",
+      "bytes": 436172,
+      "sha256": "4c62f7826ca28d7325c6d125c50b75d07f2ddfc2ea0bee0691aaedacb57bdf08"
+    },
+    {
+      "path": "/tmp/xsim-core-integration-20261006/package/libglfw3_3.3.2-1_amd64.deb",
+      "bytes": 73564,
+      "sha256": "b555c1721b5baf756e2ace4d0daec8ea1059166a5af2661dda80af252ef32c0d"
+    },
+    {
+      "path": "/tmp/xsim-core-integration-20261006/xgc-core-linux-amd64",
+      "bytes": 6000802,
+      "sha256": "92f93d61a4f595ab45cf411e188c6f6b23c6788be25c11e74c211bcead0f7fba"
+    }
+  ],
+  "scope": "private actual install/start verified; live adoption and remaining linear commits belong to Root",
+  "baseline_remote": {
+    "lightweight-sim": "9e3df91c46aea77fd5a691cbb1523e29ae63e69e",
+    "convex_geometry": "faf1119efa686de1b1ee3f6382287068ec6ffd25"
+  },
+  "root_workflow_remote": "de23d536"
+}
