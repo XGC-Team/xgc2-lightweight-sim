@@ -25,8 +25,8 @@ ownership:
   - /opt/ros/noetic/lib/python3/dist-packages/xgc2_lightweight_sim_msgs
   - /opt/ros/noetic/lib/pkgconfig/xgc2_lightweight_sim_msgs.pc
 release:
-  repository: XGC-Team/xsim
-  ref: restart/pre-optimization-2026-10-06
+  repository: XGC-Team/xgc2-xsim
+  ref: main
   workflow: release.yml
   ci_workflow: ci.yml
   requires: [libxgc2-math-dev, libxgc2-robotics-interfaces-dev]

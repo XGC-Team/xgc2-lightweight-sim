@@ -1,4 +1,4 @@
-# xsim
+# xgc2-xsim
 
 One independent ROS1 simulation server per world. `xsim` owns entity identity,
 physical state, provider generations and the simulation clock. It runs FS150,
