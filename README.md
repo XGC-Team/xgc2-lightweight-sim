@@ -19,12 +19,12 @@ cmake -S ../convex_geometry/xgc2_world_lidar/library -B /private/lidar-build \
   -DCMAKE_INSTALL_PREFIX=/private/install -DCMAKE_BUILD_TYPE=Release
 cmake --build /private/lidar-build -j1
 cmake --install /private/lidar-build
-cmake -S src/xgc2_lightweight_sim -B /private/xsim-build \
+cmake -S src/xsim -B /private/xsim-build \
   -DCMAKE_PREFIX_PATH='/private/install;/opt/ros/noetic' \
   -DCMAKE_INSTALL_PREFIX=/private/install \
   -DXGC2_MATH_INCLUDE=/path/to/math/include \
   -DFS150_ASSET_SOURCE_ROOT=/path/to/gazebo-sim/fs150-sitl \
-  -DCMAKE_BUILD_TYPE=Release -DLIGHTWEIGHT_TESTS=ON
+  -DCMAKE_BUILD_TYPE=Release -DXSIM_TESTS=ON
 cmake --build /private/xsim-build -j1
 (cd /private/xsim-build && ctest --output-on-failure)
 cmake --install /private/xsim-build

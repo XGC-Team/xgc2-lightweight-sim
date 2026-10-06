@@ -5,7 +5,7 @@ sim_source="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 geometry_source="$(realpath "$1")"
 fs150_source="$(realpath "$2")"
 package_output="$(realpath -m "$3")"
-[[ -f "$sim_source/src/xgc2_lightweight_sim/xsim/main.cpp" && -f "$geometry_source/xgc2_world_lidar/library/CMakeLists.txt" && -f "$fs150_source/scripts/generate_native_flight_model.py" ]] || { echo 'the three owning sources are required' >&2; exit 2; }
+[[ -f "$sim_source/src/xsim/xsim/main.cpp" && -f "$geometry_source/xgc2_world_lidar/library/CMakeLists.txt" && -f "$fs150_source/scripts/generate_native_flight_model.py" ]] || { echo 'the three owning sources are required' >&2; exit 2; }
 build_cmake_prefix="${CMAKE_PREFIX_PATH:-}"
 set +u
 source /opt/ros/noetic/setup.bash
@@ -24,9 +24,9 @@ cmake -S "$geometry_source/xgc2_world_lidar/library" -B "$build_output/geometry"
 cmake --build "$build_output/geometry" --parallel 2
 (cd "$build_output/geometry" && ctest --output-on-failure)
 DESTDIR="$build_output/stage" cmake --install "$build_output/geometry"
-cmake -S "$sim_source/src/xgc2_lightweight_sim" -B "$build_output/server" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/xgc2/xsim \
+cmake -S "$sim_source/src/xsim" -B "$build_output/server" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/xgc2/xsim \
  -DCMAKE_PREFIX_PATH="$build_output/stage/opt/xgc2/xsim;$build_output/msgs/devel;${cmake_prefix_list}" \
- -DXGC2_MATH_INCLUDE="${XGC2_MATH_INCLUDE:-/usr/include}" -DFS150_ASSET_SOURCE_ROOT="$fs150_source" -DXSIM_GPU=ON -DLIGHTWEIGHT_TESTS=ON
+ -DXGC2_MATH_INCLUDE="${XGC2_MATH_INCLUDE:-/usr/include}" -DFS150_ASSET_SOURCE_ROOT="$fs150_source" -DXSIM_GPU=ON -DXSIM_TESTS=ON
 cmake --build "$build_output/server" --parallel 2
 (cd "$build_output/server" && ctest --output-on-failure)
 DESTDIR="$build_output/stage" cmake --install "$build_output/server"

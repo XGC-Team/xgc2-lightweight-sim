@@ -1,12 +1,12 @@
 # xsim 独立服务器交付与验证
 
 2026-10-06；本报告是限定范围的本地证据，待 Root 最终审查，不是整站接入/部署验收。
-改动仅在 lightweight-sim owning 仓和 convex_geometry 的必要 sensor library 接口/导出/测试。
+改动仅在 xsim owning 仓和 convex_geometry 的必要 sensor library 接口/导出/测试。
 没有提交、推送、父 pins 修改，没有 live 站、Stop/Run、host 安装或用户 runtime 物料变更。
 
 ## 代码与运行合同
 
-- `src/xgc2_lightweight_sim/xsim/`：world/ECS、三 kind 连续批处理、唯一时钟、ROS、
+- `src/xsim/xsim/`：world/ECS、三 kind 连续批处理、唯一时钟、ROS、
   Unix HTTP/JSON 管理、输出快照、CPU/GPU sensor 异步执行。
 - `rigid_body.hpp` / `vehicle_model.hpp`：物理状态迁入 world-owned SoA/planar columns，
   controller/filter 保持紧凑同类 AoS；原模型/控制数学未调参。
@@ -33,11 +33,11 @@ CPU 0 留给 Viewer 的并行任务。
 robotics headers 和当前 sensor library 到同一私有 prefix）：
 
 ```sh
-cmake -S /source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim -B /work/xsim \
+cmake -S /source/ros1/simulator/xsim/src/xsim -B /work/xsim \
   -DCMAKE_PREFIX_PATH='/work/install;/opt/ros/noetic' -DCMAKE_INSTALL_PREFIX=/work/install \
   -DCMAKE_BUILD_TYPE=Release -DXGC2_MATH_INCLUDE=/source/common/math/include \
   -DFS150_ASSET_SOURCE_ROOT=/source/ros1/simulator/gazebo-sim/fs150-sitl \
-  -DLIGHTWEIGHT_TESTS=ON -DPYTHON_EXECUTABLE=/usr/bin/python3 \
+  -DXSIM_TESTS=ON -DPYTHON_EXECUTABLE=/usr/bin/python3 \
   -DXSIM_BASELINE_SOURCE=/work/src/xgc2_lightweight_sim \
   -DXSIM_BASELINE_SDK=/source/common/sync-runtime \
   -DXSIM_ADAPTER_SOURCE=/source/ros1/communication/ros1-adapter -DXSIM_PRIVATE_ROS_TESTS=ON
