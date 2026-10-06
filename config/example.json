@@ -1,0 +1,24 @@
+{
+  "instance_id": "example-session-world",
+  "epoch_ns": 1700000000000000000,
+  "model_step_ns": 1000000,
+  "output_period_ns": 10000000,
+  "catchup_batch": 8,
+  "paused": true,
+  "publish_clock": true,
+  "sensor_workers": 2,
+  "scene": {
+    "surface_spacing": 0.1,
+    "obstacles": [{"type": "box", "position": [5, 0, 1], "size": [1, 4, 2]}]
+  },
+  "entities": [
+    {"name": "uav1", "kind": "fs150", "position": [2, -1, 0], "yaw": 0.35,
+     "local_origin": [2, -1, 0],
+     "sensor": {"backend": "cpu", "mode": "raycast", "range": 20, "min_range": 0,
+                "h_fov_deg": 90, "v_fov_deg": 30, "h_res": 360, "v_res": 32,
+                "rate_hz": 10, "translation": [0, 0, 0.1], "rotation": [1, 0, 0, 0],
+                "noise_std": 0, "seed": 1}},
+    {"name": "scout1", "kind": "scout", "position": [0, 1, 0], "yaw": 0},
+    {"name": "mecanum1", "kind": "mecanum", "position": [0, -1, 0], "yaw": 0}
+  ]
+}

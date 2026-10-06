@@ -41,7 +41,6 @@ public:
     if (!std::isfinite(world_ground_z))
       throw std::invalid_argument("flight model: invalid world ground");
     constrain_ground(0.0);
-    refresh_state();
   }
   // World-thread lifecycle operation: one slot only. This recreates the
   // noncopyable mixer and clears physical/control/request histories; no Host
@@ -50,6 +49,9 @@ public:
     FlightModel fresh(initial_position_, initial_yaw_, parameters(), ground_z_);
     *this = std::move(fresh);
   }
+  void bind(BodyColumns &columns, size_t index) { body_.bind(columns, index); }
+  void rebind(size_t index) { body_.rebind(index); }
+  RigidBodyState body_state() const { return body_.state(); }
   bool setpoint(const MaskedPva &value) {
     const auto any = [](const Eigen::Vector3d &v) {
       return std::isfinite(v.x()) || std::isfinite(v.y()) || std::isfinite(v.z());
@@ -98,12 +100,12 @@ public:
   }
   bool armed() const { return armed_; }
   FlightMode mode() const { return mode_; }
-  bool landed() const { return state_.position.z() <= ground_z_ + kLandedHeight; }
-  const xgc2_math::TranslationalState &state() const { return state_; }
+  bool landed() const { return body_.base_position().z() <= ground_z_ + kLandedHeight; }
+  xgc2_math::TranslationalState state() const { return {body_.base_position(), body_.base_velocity()}; }
   const Eigen::Vector3d &acceleration() const { return acceleration_; }
-  const Eigen::Quaterniond &orientation() const { return body_.state().orientation; }
+  Eigen::Quaterniond orientation() const { return body_.state().orientation; }
   Eigen::Vector3d angular_velocity_body() const { return body_.state().angular_velocity; }
-  const Eigen::Vector4d &rotor_speed() const { return body_.state().rotor_speed; }
+  Eigen::Vector4d rotor_speed() const { return body_.state().rotor_speed; }
   Eigen::Vector3d specific_force_body() const {
     return orientation().conjugate() *
            (acceleration_ - Eigen::Vector3d(0.0, 0.0, -body_.parameters().gravity));
@@ -131,8 +133,7 @@ public:
     for (int i = 0; i != count; ++i) {
       body_.step(control_output_.allocation.target_rotor_speed, h);
       constrain_ground(h);
-      refresh_state();
-    }
+      }
     yaw_rate_ = xgc2_math::normalizeAngle(yaw() - yaw_before) / dt;
   }
 
@@ -195,8 +196,7 @@ public:
           event = FlightEvent::Landed;
         }
       }
-      refresh_state();
-    }
+      }
     yaw_rate_ = xgc2_math::normalizeAngle(yaw() - yaw_before) / dt;
     return event;
   }
@@ -212,12 +212,8 @@ private:
     return result.valid && result.constrained;
   }
   FlightFeedback current_feedback() const {
-    return {state_.position, state_.velocity, acceleration_, orientation(),
+    return {body_.base_position(), body_.base_velocity(), acceleration_, orientation(),
             angular_velocity_body(), angular_acceleration_body_};
-  }
-  void refresh_state() {
-    state_.position = body_.base_position();
-    state_.velocity = body_.base_velocity();
   }
   bool stream_available() const {
     return received_since_step_ || offboard_available_;
@@ -244,7 +240,6 @@ private:
 
   RigidBodyModel body_;
   FlightController controller_;
-  xgc2_math::TranslationalState state_;
   double ground_z_;
   Eigen::Vector3d initial_position_;
   double initial_yaw_;
@@ -263,12 +258,23 @@ private:
   bool armed_{false};
 };
 
+struct PlanarColumns {
+  std::vector<Eigen::Vector2d> position;
+  std::vector<double> yaw;
+  size_t append(xgc2_math::Pose2 p) {
+    size_t i=position.size(); position.push_back(p.position); yaw.push_back(p.yaw); return i;
+  }
+  xgc2_math::Pose2 get(size_t i) const { return {position[i], yaw[i]}; }
+  void set(size_t i, xgc2_math::Pose2 p) { position[i]=p.position; yaw[i]=p.yaw; }
+  void erase(size_t i) { set(i, get(position.size()-1)); position.pop_back(); yaw.pop_back(); }
+};
+
 class ScoutModel {
 public:
   explicit ScoutModel(
       const xgc2_math::Pose2 &pose,
       const xgc2_math::DelayedPlanarVelocityParameters &response = {})
-      : pose_(pose), response_(response) {}
+      : local_pose_(pose), response_(response) {}
 
   void command(double time, double forward, double yaw_rate) {
     // Same defaults as the accepted Gazebo unicycle plant; not wheel physics.
@@ -278,21 +284,28 @@ public:
   void advance(double end) {
     const double dt = end - response_.time();
     const auto middle = response_.advance(response_.time() + 0.5 * dt);
-    pose_ = xgc2_math::stepBodyVelocity(pose_, {middle.linear_m_s, 0.0},
-                                        middle.yaw_rad_s, dt);
+    set_pose(xgc2_math::stepBodyVelocity(pose(), {middle.linear_m_s, 0.0},
+                                        middle.yaw_rad_s, dt));
     response_.advance(end);
   }
-  const xgc2_math::Pose2 &pose() const { return pose_; }
+  xgc2_math::Pose2 pose() const { return columns_ ? columns_->get(index_) : *local_pose_; }
+  void set_pose(xgc2_math::Pose2 p) { if(columns_) columns_->set(index_,p); else local_pose_=p; }
+  void bind(PlanarColumns &columns, size_t i) {
+    const auto p=pose(); columns_=&columns; index_=i; columns.set(i,p); local_pose_.reset();
+  }
+  void rebind(size_t i) { index_=i; }
   xgc2_math::PlanarVelocity velocity() const { return response_.velocity(); }
 
 private:
-  xgc2_math::Pose2 pose_;
+  std::optional<xgc2_math::Pose2> local_pose_;
+  PlanarColumns *columns_{nullptr};
+  size_t index_{0};
   xgc2_math::DelayedPlanarVelocity response_;
 };
 
 class MecanumModel {
 public:
-  explicit MecanumModel(const xgc2_math::Pose2 &pose) : pose_(pose) {}
+  explicit MecanumModel(const xgc2_math::Pose2 &pose) : local_pose_(pose) {}
 
   void command(double forward, double left, double yaw_rate) {
     // Defaults of ugv_sim_single.launch, not unverified MCU/TEB limits.
@@ -301,14 +314,21 @@ public:
     yaw_rate_ = std::clamp(yaw_rate, -1.5707963267948966, 1.5707963267948966);
   }
   void step(double dt) {
-    pose_ = xgc2_math::stepBodyVelocity(pose_, body_velocity_, yaw_rate_, dt);
+    set_pose(xgc2_math::stepBodyVelocity(pose(), body_velocity_, yaw_rate_, dt));
   }
-  const xgc2_math::Pose2 &pose() const { return pose_; }
+  xgc2_math::Pose2 pose() const { return columns_ ? columns_->get(index_) : *local_pose_; }
+  void set_pose(xgc2_math::Pose2 p) { if(columns_) columns_->set(index_,p); else local_pose_=p; }
+  void bind(PlanarColumns &columns, size_t i) {
+    const auto p=pose(); columns_=&columns; index_=i; columns.set(i,p); local_pose_.reset();
+  }
+  void rebind(size_t i) { index_=i; }
   const Eigen::Vector2d &body_velocity() const { return body_velocity_; }
   double yaw_rate() const { return yaw_rate_; }
 
 private:
-  xgc2_math::Pose2 pose_;
+  std::optional<xgc2_math::Pose2> local_pose_;
+  PlanarColumns *columns_{nullptr};
+  size_t index_{0};
   Eigen::Vector2d body_velocity_{Eigen::Vector2d::Zero()};
   double yaw_rate_{0.0};
 };

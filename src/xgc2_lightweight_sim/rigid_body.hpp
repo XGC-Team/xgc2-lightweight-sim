@@ -10,6 +10,8 @@
 #include <array>
 #include <cmath>
 #include <stdexcept>
+#include <optional>
+#include <vector>
 
 namespace xgc_lightweight {
 
@@ -70,6 +72,32 @@ struct RigidBodyState {
   Eigen::Vector4d rotor_speed{Eigen::Vector4d::Zero()}; // nonnegative rad/s
 };
 
+// World-owned columns. Standalone numerical fixtures retain local storage;
+// a bound model has no private physical state. Dense moves rebind its index.
+struct BodyColumns {
+  std::vector<Eigen::Vector3d> position, velocity, angular_velocity;
+  std::vector<Eigen::Quaterniond> orientation;
+  std::vector<Eigen::Vector4d> rotor_speed;
+  size_t append(const RigidBodyState &s) {
+    const auto i = position.size();
+    position.push_back(s.position); velocity.push_back(s.velocity);
+    orientation.push_back(s.orientation); angular_velocity.push_back(s.angular_velocity);
+    rotor_speed.push_back(s.rotor_speed); return i;
+  }
+  RigidBodyState get(size_t i) const {
+    return {position[i], velocity[i], orientation[i], angular_velocity[i], rotor_speed[i]};
+  }
+  void set(size_t i, const RigidBodyState &s) {
+    position[i]=s.position; velocity[i]=s.velocity; orientation[i]=s.orientation;
+    angular_velocity[i]=s.angular_velocity; rotor_speed[i]=s.rotor_speed;
+  }
+  void erase(size_t i) {
+    set(i, get(position.size()-1));
+    position.pop_back(); velocity.pop_back(); orientation.pop_back();
+    angular_velocity.pop_back(); rotor_speed.pop_back();
+  }
+};
+
 // Pure 6DoF plant. A command holds target rotor speeds for dt; attitude evolves
 // ONLY through torque and qdot = .5*q*(0,omega_body). Motors follow their exact
 // first-order response, sampled at every RK4 stage. Rigid-body state uses RK4
@@ -86,6 +114,7 @@ public:
     inverse_inertia_ = parameters_.inertia.llt().solve(Eigen::Matrix3d::Identity());
     if (!inverse_inertia_.allFinite())
       throw std::invalid_argument("inertia inverse is not representable");
+    auto &state_ = *local_;
     state_.orientation = Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ());
     state_.position = initial_base_position +
                       state_.orientation * parameters_.body_origin_to_com;
@@ -93,7 +122,15 @@ public:
       throw std::invalid_argument("overflow in initial COM position");
   }
 
-  const RigidBodyState &state() const { return state_; }
+  RigidBodyState state() const { return columns_ ? columns_->get(index_) : *local_; }
+  void bind(BodyColumns &columns, size_t index) {
+    const auto s = state(); columns_ = &columns; index_ = index;
+    columns_->set(index_, s); local_.reset();
+  }
+  void rebind(size_t index) { index_ = index; }
+  void assign_state(const RigidBodyState &s) {
+    if (columns_) columns_->set(index_, s); else local_ = s;
+  }
   const RigidBodyParameters &parameters() const { return parameters_; }
 
   // Controlled initialization/reset entry. Validates before mutation and
@@ -102,7 +139,7 @@ public:
     validate_state(state);
     RigidBodyState next = state;
     next.orientation.normalize();
-    state_ = next;
+    assign_state(next);
   }
 
   // dt=0 is a validated no-op. Reject negative/nonfinite dt and pauses >.1 s;
@@ -118,7 +155,7 @@ public:
       return;
     const Eigen::Vector4d target = target_rotor_speed.cwiseMax(0.0).cwiseMin(
         parameters_.max_rotor_speed);
-    RigidBodyState next = state_;
+    RigidBodyState next = state();
     double remaining = dt;
     unsigned int substeps = 0;
     while (remaining > 0.0) {
@@ -133,24 +170,27 @@ public:
       validate_state(next);
       remaining = h == remaining ? 0.0 : remaining - h;
     }
-    state_ = next;
+    assign_state(next);
   }
 
   // Instantaneous endpoint accelerations, including gravity in world ENU.
   Eigen::Vector3d acceleration_world() const {
-    return linear_acceleration(state_);
+    return linear_acceleration(state());
   }
   Eigen::Vector3d angular_acceleration_body() const {
-    return angular_acceleration(state_);
+    return angular_acceleration(state());
   }
   Eigen::Vector3d base_position() const {
+    const auto state_ = state();
     return state_.position - state_.orientation * parameters_.body_origin_to_com;
   }
   Eigen::Vector3d base_velocity() const {
+    const auto state_ = state();
     return state_.velocity - state_.orientation *
         state_.angular_velocity.cross(parameters_.body_origin_to_com);
   }
   Eigen::Vector3d base_acceleration() const {
+    const auto state_ = state();
     const Eigen::Vector3d &r = parameters_.body_origin_to_com;
     const Eigen::Vector3d &w = state_.angular_velocity;
     return acceleration_world() - state_.orientation *
@@ -267,7 +307,9 @@ private:
 
   RigidBodyParameters parameters_;
   Eigen::Matrix3d inverse_inertia_;
-  RigidBodyState state_;
+  std::optional<RigidBodyState> local_{RigidBodyState{}};
+  BodyColumns *columns_{nullptr};
+  size_t index_{0};
 };
 
 } // namespace xgc_lightweight

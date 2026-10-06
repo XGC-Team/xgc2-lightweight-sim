@@ -1,3 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(xgc2_lightweight_sim LANGUAGES CXX)
+if(LIGHTWEIGHT_TESTS)
+  enable_testing()
+endif()
 add_subdirectory(src/xgc2_lightweight_sim)

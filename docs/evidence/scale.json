@@ -1,0 +1,320 @@
+[
+  {
+    "entities": 20,
+    "elapsed_wall_s": 2.0090445389505476,
+    "completed_steps": 2006,
+    "interval_rtf": 0.998484583645847,
+    "process": {
+      "VmHWM": "34492 kB",
+      "VmRSS": "34492 kB",
+      "Threads": "11"
+    },
+    "status": {
+      "epoch_ns": 1700000000000000000,
+      "input_coalesced": 0,
+      "instance_id": "xsim-private-contract",
+      "lag_ns": 218192,
+      "max_step_latency_ns": 3515389,
+      "model_step_ns": 1000000,
+      "output_misses": 0,
+      "paused": true,
+      "rtf": 0.8140225654419865,
+      "sensors": [
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 4,
+          "latency_ns": 4934243,
+          "max_latency_ns": 20035882,
+          "misses": 0,
+          "scans": 61
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 9,
+          "latency_ns": 5767477,
+          "max_latency_ns": 20663162,
+          "misses": 0,
+          "scans": 60
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 14,
+          "latency_ns": 9709290,
+          "max_latency_ns": 19753528,
+          "misses": 0,
+          "scans": 60
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 19,
+          "latency_ns": 5112440,
+          "max_latency_ns": 20506511,
+          "misses": 0,
+          "scans": 61
+        }
+      ],
+      "simulation_time_ns": 1700000011221000000,
+      "step_latency_ns": 25589,
+      "steps": 11221
+    }
+  },
+  {
+    "entities": 100,
+    "elapsed_wall_s": 2.009409552963916,
+    "completed_steps": 2006,
+    "interval_rtf": 0.9983032065519511,
+    "process": {
+      "VmHWM": "119588 kB",
+      "VmRSS": "119588 kB",
+      "Threads": "11"
+    },
+    "status": {
+      "epoch_ns": 1700000000000000000,
+      "input_coalesced": 0,
+      "instance_id": "xsim-private-contract",
+      "lag_ns": 130725,
+      "max_step_latency_ns": 3515389,
+      "model_step_ns": 1000000,
+      "output_misses": 0,
+      "paused": true,
+      "rtf": 0.7316685101758312,
+      "sensors": [
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 24,
+          "latency_ns": 14562616,
+          "max_latency_ns": 34020940,
+          "misses": 1,
+          "scans": 59
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 29,
+          "latency_ns": 18407828,
+          "max_latency_ns": 37005145,
+          "misses": 1,
+          "scans": 59
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 34,
+          "latency_ns": 23375037,
+          "max_latency_ns": 33703027,
+          "misses": 2,
+          "scans": 58
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 39,
+          "latency_ns": 27850579,
+          "max_latency_ns": 31862398,
+          "misses": 1,
+          "scans": 59
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 44,
+          "latency_ns": 33278278,
+          "max_latency_ns": 33288823,
+          "misses": 0,
+          "scans": 60
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 49,
+          "latency_ns": 35405252,
+          "max_latency_ns": 35405252,
+          "misses": 0,
+          "scans": 60
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 54,
+          "latency_ns": 4138352,
+          "max_latency_ns": 37640908,
+          "misses": 1,
+          "scans": 60
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 59,
+          "latency_ns": 7153526,
+          "max_latency_ns": 38229979,
+          "misses": 2,
+          "scans": 59
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 64,
+          "latency_ns": 21927652,
+          "max_latency_ns": 35281480,
+          "misses": 5,
+          "scans": 55
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 69,
+          "latency_ns": 8608036,
+          "max_latency_ns": 38546532,
+          "misses": 3,
+          "scans": 57
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 74,
+          "latency_ns": 16723957,
+          "max_latency_ns": 37341533,
+          "misses": 5,
+          "scans": 55
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 79,
+          "latency_ns": 24263729,
+          "max_latency_ns": 34744077,
+          "misses": 6,
+          "scans": 54
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 84,
+          "latency_ns": 26024682,
+          "max_latency_ns": 33603203,
+          "misses": 2,
+          "scans": 58
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 89,
+          "latency_ns": 27625958,
+          "max_latency_ns": 34018258,
+          "misses": 3,
+          "scans": 57
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 94,
+          "latency_ns": 29310396,
+          "max_latency_ns": 34195033,
+          "misses": 3,
+          "scans": 57
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 99,
+          "latency_ns": 30825800,
+          "max_latency_ns": 33736684,
+          "misses": 2,
+          "scans": 58
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 104,
+          "latency_ns": 1472563,
+          "max_latency_ns": 33644409,
+          "misses": 2,
+          "scans": 59
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 109,
+          "latency_ns": 3103388,
+          "max_latency_ns": 32896729,
+          "misses": 2,
+          "scans": 58
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 114,
+          "latency_ns": 6166076,
+          "max_latency_ns": 34227693,
+          "misses": 2,
+          "scans": 58
+        },
+        {
+          "backend": "cpu",
+          "error": "",
+          "errors": 0,
+          "generation": 1,
+          "id": 119,
+          "latency_ns": 9204590,
+          "max_latency_ns": 32248424,
+          "misses": 2,
+          "scans": 58
+        }
+      ],
+      "simulation_time_ns": 1700000013227000000,
+      "step_latency_ns": 74223,
+      "steps": 13227
+    }
+  }
+]

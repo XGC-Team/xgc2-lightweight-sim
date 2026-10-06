@@ -1,0 +1,47 @@
+Test project /work/xsim
+      Start  1: lightweight_rigid_body
+ 1/10 Test  #1: lightweight_rigid_body ...........   Passed    0.02 sec
+      Start  2: lightweight_flight_controller
+ 2/10 Test  #2: lightweight_flight_controller ....   Passed    0.04 sec
+      Start  3: lightweight_model
+ 3/10 Test  #3: lightweight_model ................   Passed    0.31 sec
+      Start  4: lightweight_px4_setpoint
+ 4/10 Test  #4: lightweight_px4_setpoint .........   Passed    0.00 sec
+      Start  5: lightweight_ground_contact
+ 5/10 Test  #5: lightweight_ground_contact .......   Passed    0.00 sec
+      Start  6: xsim_replay_fs150
+ 6/10 Test  #6: xsim_replay_fs150 ................   Passed    0.09 sec
+      Start  7: xsim_replay_scout
+ 7/10 Test  #7: xsim_replay_scout ................   Passed    0.02 sec
+      Start  8: xsim_replay_mecanum
+ 8/10 Test  #8: xsim_replay_mecanum ..............   Passed    0.02 sec
+      Start  9: xsim_world
+ 9/10 Test  #9: xsim_world .......................   Passed    0.46 sec
+      Start 10: xsim_ros_contract
+10/10 Test #10: xsim_ros_contract ................***Failed   12.13 sec
+Traceback (most recent call last):
+  File "/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/../../tests/ros_integration.py", line 289, in <module>
+    if __name__=='__main__':main()
+  File "/source/ros1/simulator/lightweight-sim/src/xgc2_lightweight_sim/../../tests/ros_integration.py", line 215, in main
+    assert error<1e-9,(k,idx,error,actual,expected)
+AssertionError: ('mecanum', 5, 0.003392339891525986, [3.199005327077627, -0.16420198284282522, 0.0, 0.8483719455001614, -0.14235533740703632, 0.0], [3.199005327077627, -0.16420198284282522, 0.0, 0.8477957387024744, -0.1457476772985623, 0.0])
+
+
+90% tests passed, 1 tests failed out of 10
+
+Total Test time (real) =  13.08 sec
+
+The following tests FAILED:
+	 10 - xsim_ros_contract (Failed)
+Errors while running CTest
+
+The first ROS failure compared independently delivered latest pose and twist from different stamps.
+The fixture now waits for matching stamps on the original mocap source topics; tolerance is unchanged.
+Final targeted rerun:
+Test project /work/xsim
+    Start 10: xsim_ros_contract
+1/1 Test #10: xsim_ros_contract ................   Passed   22.61 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =  22.61 sec

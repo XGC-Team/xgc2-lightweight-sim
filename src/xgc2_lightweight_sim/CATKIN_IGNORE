@@ -1,1 +1,1 @@
-Standalone native simulation component; no catkin or SSS-clock dependency.
+Standalone CMake xsim server; ROS packages are dependencies. No sync-runtime Host dependency.
