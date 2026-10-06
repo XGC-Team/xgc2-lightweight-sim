@@ -6,8 +6,7 @@ kind: ros1-apt
 summary: Standalone ECS world with original FS150/Scout/Mecanum ROS interfaces and integrated CPU/GPU sensing.
 ros:
   distro: noetic
-  packages:
-  - xgc2_lightweight_sim_msgs
+  packages: []
 apt:
   distribution: focal
   install: [xsim]
@@ -20,10 +19,6 @@ usage:
 ownership:
   paths:
   - /opt/xgc2/xsim
-  - /opt/ros/noetic/share/xgc2_lightweight_sim_msgs
-  - /opt/ros/noetic/include/xgc2_lightweight_sim_msgs
-  - /opt/ros/noetic/lib/python3/dist-packages/xgc2_lightweight_sim_msgs
-  - /opt/ros/noetic/lib/pkgconfig/xgc2_lightweight_sim_msgs.pc
 release:
   repository: XGC-Team/xgc2-xsim
   ref: main

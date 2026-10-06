@@ -4,62 +4,10 @@
 #include <pthread.h>
 namespace xsim {
 namespace {
-Eigen::Vector3d vec3(const Json &v) {
-  if (!v.is_array() || v.size() != 3)
-    throw std::invalid_argument("expected three numbers");
-  Eigen::Vector3d r(v[0].get<double>(), v[1].get<double>(), v[2].get<double>());
-  if (!r.allFinite())
-    throw std::invalid_argument("nonfinite vector");
-  return r;
-}
 bool continuous(Op op) {
   return op == Op::Pva || op == Op::Attitude || op == Op::Velocity;
 }
 } // namespace
-Config parse_entity(const Json &j) {
-  Config c;
-  c.name = j.at("name").get<std::string>();
-  if (c.name.empty() ||
-      c.name.find_first_not_of(
-          "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") !=
-          std::string::npos)
-    throw std::invalid_argument("name must be a ROS namespace segment");
-  const auto kind = j.at("kind").get<std::string>();
-  if (kind == "fs150")
-    c.kind = Kind::FS150;
-  else if (kind == "scout")
-    c.kind = Kind::Scout;
-  else if (kind == "mecanum")
-    c.kind = Kind::Mecanum;
-  else
-    throw std::invalid_argument("unknown kind");
-  if (j.contains("position"))
-    c.initial = vec3(j.at("position"));
-  c.yaw = j.value("yaw", 0.0);
-  c.ground_z = j.value("ground_z", 0.0);
-  if (!std::isfinite(c.yaw) || !std::isfinite(c.ground_z))
-    throw std::invalid_argument("nonfinite pose");
-  if (j.contains("local_origin"))
-    c.local_origin = vec3(j.at("local_origin"));
-  if (j.contains("fcu_parameters")) {
-    if (c.kind != Kind::FS150)
-      throw std::invalid_argument("FCU parameters require fs150");
-    for (auto i = j.at("fcu_parameters").begin();
-         i != j.at("fcu_parameters").end(); ++i)
-      if (!c.fcu.set(i.key(), i.value().get<double>()))
-        throw std::invalid_argument("invalid FCU parameter: " + i.key());
-  }
-  c.ros = j.value("ros", Json::object());
-  c.sensor = j.value("sensor", Json::object());
-  return c;
-}
-Model prepare_model(const Config &c) {
-  if (c.kind == Kind::FS150)
-    return Flight(c);
-  if (c.kind == Kind::Scout)
-    return Scout(c);
-  return Mecanum(c);
-}
 World::World(int64_t e, int64_t d, int64_t o, unsigned c)
     : epoch(e), dt(d), output_period(o), time_(e), next_output_(e),
       catchup_(c) {
@@ -384,19 +332,12 @@ void World::advance() {
   for (size_t i = 0; i < flights_.size(); ++i) {
     auto &f = flights_[i];
     auto &e = *slots_.at(flight_ids_[i]).entity;
-    if (e.enabled) {
-      if (f.model.step(h) == FlightEvent::OffboardLost)
-        f.mode = "AUTO.LOITER";
-    } else if (f.ever_started)
-      f.model.stepPhysicsOnly(h);
+    step_robot(f, e.enabled, h);
   }
-  for (auto &s : scouts_) {
-    ++s.steps;
-    s.age = double(int64_t(s.steps) * dt) * 1e-9;
-    s.model.advance(s.age);
-  }
+  for (auto &s : scouts_)
+    step_robot(s, dt);
   for (auto &m : mecanums_)
-    m.model.step(h);
+    step_robot(m, h);
   ++steps_;
   time_ = epoch + int64_t(steps_) * dt;
   metrics.steps = steps_;

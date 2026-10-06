@@ -1,4 +1,4 @@
-#include "ros.hpp"
+#include "entity.hpp"
 namespace xsim {
 namespace {
 Ticket ticket(const std::shared_ptr<Entity> &e, Op op, uint64_t generation) {
@@ -25,18 +25,19 @@ bool current(const std::shared_ptr<Entity> &e, uint64_t generation) {
 std::string RosEntity::topic(const std::string &key,
                              const std::string &suffix) const {
   auto e = entity.lock();
-  return e->config.ros.value(key, "/" + e->config.name + suffix);
+  return ros_config.value(key, "/" + e->config.name + suffix);
 }
 RosEntity::RosEntity(const std::shared_ptr<Entity> &e, World &w,
-                     ros::CallbackQueue &iq, ros::CallbackQueue &sq)
-    : entity(e), world(w), rng(e->config.ros.value("mocap_seed", 1u)) {
+                     ros::CallbackQueue &iq, ros::CallbackQueue &sq,
+                     const Json &config)
+    : ros_config(config), entity(e), world(w), rng(ros_config.value("mocap_seed", 1u)) {
   input.setCallbackQueue(&iq);
   services.setCallbackQueue(&sq);
-  frame = e->config.ros.value(
+  frame = ros_config.value(
       "frame", std::string(e->config.kind == Kind::FS150 ? "map" : "world"));
-  body_frame = e->config.ros.value("body_frame", std::string("base_link"));
-  if (e->config.ros.contains("mocap_noise")) {
-    const auto &n = e->config.ros.at("mocap_noise");
+  body_frame = ros_config.value("body_frame", std::string("base_link"));
+  if (ros_config.contains("mocap_noise")) {
+    const auto &n = ros_config.at("mocap_noise");
     if (n.size() != 3)
       throw std::invalid_argument("mocap_noise needs 3 standard deviations");
     for (int a = 0; a < 3; ++a)
@@ -44,29 +45,22 @@ RosEntity::RosEntity(const std::shared_ptr<Entity> &e, World &w,
     if (!noise.allFinite() || (noise.array() < 0).any())
       throw std::invalid_argument("invalid mocap noise");
   }
-  truth = input.advertise<geometry_msgs::PoseStamped>(
-      topic("truth_topic", "/simulation/body_pose"), 1);
   mocap = input.advertise<geometry_msgs::PoseStamped>(
-      e->config.ros.value("mocap_topic",
+      ros_config.value("mocap_topic",
                           "/vrpn_client_node/" + e->config.name + "/pose"),
       1);
   mocap_velocity = input.advertise<geometry_msgs::TwistStamped>(
-      e->config.ros.value("mocap_velocity_topic",
+      ros_config.value("mocap_velocity_topic",
                           "/vrpn_client_node/" + e->config.name + "/twist"),
       1);
   const bool flight = e->config.kind == Kind::FS150;
-  pose = input.advertise<geometry_msgs::PoseStamped>(
-      topic("pose_topic",
-            flight ? "/mavros/local_position/pose" : "/simulation/pose"),
-      1);
-  velocity = input.advertise<geometry_msgs::TwistStamped>(
-      topic("velocity_topic", flight ? "/mavros/local_position/velocity_local"
-                                     : "/simulation/velocity"),
-      1);
-  odom = input.advertise<nav_msgs::Odometry>(
-      topic("odometry_topic", flight ? "/mavros/local_position/odom" : "/odom"),
-      1);
   if (flight) {
+    pose = input.advertise<geometry_msgs::PoseStamped>(
+        topic("pose_topic", "/mavros/local_position/pose"), 1);
+    velocity = input.advertise<geometry_msgs::TwistStamped>(
+        topic("velocity_topic", "/mavros/local_position/velocity_local"), 1);
+    odom = input.advertise<nav_msgs::Odometry>(
+        topic("odometry_topic", "/mavros/local_position/odom"), 1);
     imu = input.advertise<sensor_msgs::Imu>(
         topic("imu_topic", "/mavros/imu/data"), 1);
     raw_imu = input.advertise<sensor_msgs::Imu>(
@@ -100,31 +94,6 @@ RosEntity::RosEntity(const std::shared_ptr<Entity> &e, World &w,
       for(unsigned a=0;a<(e->sensor->with_bodies?9u:8u);++a){sensor_msgs::PointField f;f.name=names[a];f.offset=a*4;f.datatype=a==8?sensor_msgs::PointField::INT32:sensor_msgs::PointField::FLOAT32;f.count=1;beam_message.fields.push_back(f);}
     }
   }
-  boost::function<bool(xgc2_lightweight_sim_msgs::SetProvider::Request &,
-                       xgc2_lightweight_sim_msgs::SetProvider::Response &)>
-      provider_fn = [weak = entity, &w](auto &req, auto &res) {
-        auto e = weak.lock();
-        if (!e || !e->alive)
-          return false;
-        auto t = ticket(e, Op::Provider, req.generation);
-        t->action = req.action;
-        if (req.action == 1)
-          t->prepared =
-              std::make_unique<Prepared>(Prepared{e, prepare_model(e->config)});
-        w.submit(t);
-        if (!World::wait(t))
-          return false;
-        res.accepted = t->result.success;
-        res.enabled = t->result.enabled;
-        res.generation = t->result.key.generation;
-        res.reason = t->result.reason;
-        res.message = res.accepted ? "accepted"
-                                   : res.reason == 1 ? "stale generation"
-                                                     : "invalid action or body";
-        return true;
-      };
-  provider = services.advertiseService(
-      topic("provider_service", "/simulation/provider"), provider_fn);
   reconcile();
 }
 void RosEntity::reconcile() {
@@ -145,27 +114,8 @@ void RosEntity::reconcile() {
   arm.shutdown();
   mode.shutdown();
   command.shutdown();
-  reset.shutdown();
   if (!e->alive)
     return;
-  boost::function<bool(std_srvs::Trigger::Request &,
-                       std_srvs::Trigger::Response &)>
-      reset_fn = [weak = entity, gen, this](auto &, auto &res) {
-        auto e = weak.lock();
-        if (!e || !e->alive)
-          return false;
-        auto t = ticket(e, Op::Reset, gen);
-        t->prepared =
-            std::make_unique<Prepared>(Prepared{e, prepare_model(e->config)});
-        world.submit(t);
-        if (!World::wait(t))
-          return false;
-        res.success = t->result.success;
-        res.message = res.success ? "reset applied" : "stale generation";
-        return true;
-      };
-  reset = services.advertiseService(topic("reset_service", "/simulation/reset"),
-                                    reset_fn);
   if (e->config.kind != Kind::FS150) {
     if (!enabled)
       return;
@@ -348,7 +298,6 @@ void RosEntity::publish(const State &s) {
       p.pose.position.y = s.position.y();
       p.pose.position.z = s.position.z();
       orientation(p.pose.orientation, s.orientation);
-      truth.publish(p);
       auto measured = p;
       double *axes[3] = {&measured.pose.position.x, &measured.pose.position.y,
                          &measured.pose.position.z};
@@ -356,27 +305,26 @@ void RosEntity::publish(const State &s) {
         if (noise[a] > 0)
           *axes[a] += noise[a] * normal(rng);
       mocap.publish(measured);
-      p.header.frame_id = frame;
-      p.pose.position.x -= e->config.local_origin.x();
-      p.pose.position.y -= e->config.local_origin.y();
-      p.pose.position.z -= e->config.local_origin.z();
-      pose.publish(p);
       geometry_msgs::TwistStamped v;
       v.header = p.header;
       vector(v.twist.linear, s.velocity);
       vector(v.twist.angular, s.orientation * s.omega);
-      velocity.publish(v);
-      auto mocap_v = v;
-      mocap_v.header.frame_id = "world";
-      mocap_velocity.publish(mocap_v);
-      nav_msgs::Odometry o;
-      o.header = p.header;
-      o.child_frame_id = body_frame;
-      o.pose.pose = p.pose;
-      vector(o.twist.twist.linear, s.orientation.conjugate() * s.velocity);
-      vector(o.twist.twist.angular, s.omega);
-      odom.publish(o);
+      mocap_velocity.publish(v);
       if (e->config.kind == Kind::FS150) {
+        p.header.frame_id = frame;
+        p.pose.position.x -= e->config.local_origin.x();
+        p.pose.position.y -= e->config.local_origin.y();
+        p.pose.position.z -= e->config.local_origin.z();
+        pose.publish(p);
+        v.header = p.header;
+        velocity.publish(v);
+        nav_msgs::Odometry o;
+        o.header = p.header;
+        o.child_frame_id = body_frame;
+        o.pose.pose = p.pose;
+        vector(o.twist.twist.linear, s.orientation.conjugate() * s.velocity);
+        vector(o.twist.twist.angular, s.omega);
+        odom.publish(o);
         sensor_msgs::Imu m;
         m.header.stamp = stamp;
         m.header.frame_id = body_frame;

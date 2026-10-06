@@ -2,7 +2,7 @@
 """Small real-GPU fixture. Run only in a private network-none GPU container."""
 import argparse, json, os, signal, socket, subprocess, time, xmlrpc.client
 from pathlib import Path
-from ros_integration import UnixHTTP
+from native_http import NativeProvider, UnixHTTP, assert_retired_ros_surfaces_absent
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--xsim',required=True);p.add_argument('--output',required=True);a=p.parse_args()
@@ -26,7 +26,6 @@ def main():
         wait(lambda:master.getPid('/gpu_fixture')[0]==1,'master')
         import rospy
         from sensor_msgs.msg import PointCloud2
-        from xgc2_lightweight_sim_msgs.srv import SetProvider
         rospy.set_param('/use_sim_time',True);rospy.init_node('gpu_fixture',disable_signals=True)
         entities=[]
         for i,(h,v) in enumerate(((120,40),(240,80))):
@@ -53,8 +52,10 @@ def main():
             preparation_steps.append(http('GET','/status')[1]['steps']-before)
         assert preparation_steps[0]>0
         for i in range(2):
-            name='/gpu_'+str(i)+'/simulation/provider';rospy.wait_for_service(name,5);r=rospy.ServiceProxy(name,SetProvider)(1,0);assert r.accepted
+            r=NativeProvider(str(out/'world.sock'),'gpu_'+str(i)).start(0);assert r['success']
         wait(lambda:all(len(x)>=3 and x[-1][1]>0 for x in received),'real GPU points from both resolutions')
+        code,description,graph=master.getSystemState('/gpu_fixture');assert code==1,description
+        graph_report=assert_retired_ros_surfaces_absent(graph,('gpu_0','gpu_1'),('gpu_0','gpu_1'))
         assert all(x[-1][2]==16 for x in received),received
         assert all(len({sample[1] for sample in sensor})==1 for sensor in received),received
         conn=UnixHTTP(str(out/'world.sock'));conn.request('GET','/status');status=json.loads(conn.getresponse().read());conn.close()
@@ -66,7 +67,7 @@ def main():
         gl=[line for line in text.splitlines() if line.startswith(('GL_VENDOR=','GL_RENDERER=','GL_VERSION='))]
         assert any('NVIDIA' in line or 'AMD' in line or 'Intel' in line for line in gl),gl
         result={'result':'PASS','gl':gl,'map_upload_context_count':1,'sensor_count':2,'owned_gpu_threads':1,'cpu_sensor_threads':0,
-                'observations':received,'world_steps_during_preparation':preparation_steps,'status':status,'shutdown_exit':0,'scope':'Original spherical-nearest GPU, two resolutions sharing one context/map; small static scene only.'}
+                'observations':received,'world_steps_during_preparation':preparation_steps,'status':status,'ros_graph':graph_report,'shutdown_exit':0,'scope':'Original spherical-nearest GPU, two resolutions sharing one context/map; small static scene only.'}
         (out/'result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
     finally:
         for proc in reversed(children):

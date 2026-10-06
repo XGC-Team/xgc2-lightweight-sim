@@ -1,5 +1,6 @@
 #pragma once
-#include "world.hpp"
+#include "core/world.hpp"
+#include "io/config.hpp"
 #include <xgc2_world_lidar/world_lidar.h>
 #ifdef XSIM_GPU
 #include <xgc2_world_lidar/shared_cloud_gpu.hpp>
@@ -38,7 +39,7 @@ class Sensors {
 public:
   explicit Sensors(const Json &scene, unsigned workers = 2);
   ~Sensors();
-  std::shared_ptr<Sensor> prepare(const std::shared_ptr<Entity> &);
+  std::shared_ptr<Sensor> prepare(const std::shared_ptr<Entity> &, const Json &config);
   void submit(const State &, const World *world=nullptr);
   std::vector<uint8_t> reference_cloud() const;
   void stop();

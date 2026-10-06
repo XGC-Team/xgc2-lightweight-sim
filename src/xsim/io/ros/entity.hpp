@@ -1,5 +1,6 @@
 #pragma once
-#include "sensors.hpp"
+#include "systems/sensors.hpp"
+#include "io/runtime_io.hpp"
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <mavros_msgs/AttitudeTarget.h>
@@ -15,22 +16,21 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
-#include <std_srvs/Trigger.h>
-#include <xgc2_lightweight_sim_msgs/SetProvider.h>
 namespace xsim {
 struct RosEntity {
   RosEntity(const std::shared_ptr<Entity> &, World &, ros::CallbackQueue &,
-            ros::CallbackQueue &);
+            ros::CallbackQueue &, const Json &config);
   void reconcile(); // event thread only; bind immutable-generation callbacks
   void publish(const State &); // output thread only
   bool publish_sensor(); // at most one completed scan; output thread only
+  const Json ros_config;
   std::weak_ptr<Entity> entity;
   World &world;
   ros::NodeHandle input, services;
-  ros::Publisher truth, mocap, mocap_velocity, pose, velocity, imu, raw_imu,
+  ros::Publisher mocap, mocap_velocity, pose, velocity, imu, raw_imu,
       state, extended, target, odom, cloud, beams;
   ros::Subscriber pva_sub, attitude_sub, velocity_sub;
-  ros::ServiceServer provider, reset, arm, mode, command;
+  ros::ServiceServer arm, mode, command;
   uint64_t bound_generation = UINT64_MAX;
   bool bound_enabled = false, bound_alive = false;
   std::string frame, body_frame;

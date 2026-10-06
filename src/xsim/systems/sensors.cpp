@@ -75,8 +75,8 @@ std::vector<uint8_t> Sensors::reference_cloud() const {
   std::vector<uint8_t> data(points.size()*12);size_t at=0;for(const auto& p:points){float xyz[3]={float(p.x()),float(p.y()),float(p.z())};std::memcpy(data.data()+at,xyz,12);at+=12;}return data;
 }
 Sensors::~Sensors() { stop(); }
-std::shared_ptr<Sensor> Sensors::prepare(const std::shared_ptr<Entity> &e) {
-  const auto &j = e->config.sensor;
+std::shared_ptr<Sensor> Sensors::prepare(const std::shared_ptr<Entity> &e, const Json &config) {
+  const auto &j = config;
   if (j.empty())
     return {};
   auto s = std::make_shared<Sensor>();

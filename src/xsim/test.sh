@@ -7,6 +7,7 @@ cmake -S "$owner" -B "$test_dir" -DCMAKE_BUILD_TYPE=Release \
   -DXGC2_MATH_INCLUDE="${XGC2_MATH_INCLUDE:-/usr/include}" \
   -DEIGEN_INCLUDE="${EIGEN_INCLUDE:-/usr/include/eigen3}" \
   -DFS150_ASSET_SOURCE_ROOT="${FS150_ASSET_SOURCE_ROOT:?set owning FS150 asset source}" \
+  -DXSIM_ROS="${XSIM_ROS:-ON}" \
   -DXSIM_TESTS=ON
 cmake --build "$test_dir" -j "${CMAKE_BUILD_PARALLEL_LEVEL:-1}"
 (cd "$test_dir" && ctest --output-on-failure -R '^(lightweight_|xsim_)')

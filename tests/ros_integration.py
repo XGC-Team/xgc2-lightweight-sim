@@ -3,15 +3,7 @@
 import argparse, concurrent.futures, json, math, os, signal, socket, subprocess, threading, time, xmlrpc.client
 from pathlib import Path
 from http import client as http_client
-
-class UnixHTTP(http_client.HTTPConnection):
-    def __init__(self, path):
-        super().__init__('localhost', timeout=5)
-        self.path = path
-    def connect(self):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(self.timeout)
-        self.sock.connect(self.path)
+from native_http import NativeProvider, UnixHTTP, assert_retired_ros_surfaces_absent
 
 
 def main():
@@ -55,8 +47,6 @@ def main():
         from mavros_msgs.srv import CommandBool, CommandLong, SetMode
         from nav_msgs.msg import Odometry
         from sensor_msgs.msg import Imu, PointCloud2
-        from std_srvs.srv import Trigger
-        from xgc2_lightweight_sim_msgs.srv import SetProvider
         rospy.set_param('/use_sim_time', True)
         rospy.init_node('xsim_private_contract', disable_signals=True)
         canonical = spawn([args.canonical_fixture], 'canonical-fixture.log')
@@ -65,6 +55,7 @@ def main():
         config = {'instance_id':instance, 'epoch_ns':epoch, 'paused':True, 'publish_clock':True,
                   'scene':{'obstacles':[{'type':'box','position':[5,0,0], 'size':[1,6,4]}]},
                   'entities':[{'name':kind, 'kind':kind, 'position':[2,-1,0], 'yaw':.35,
+                               'ros':{'mocap_noise':[0,0,0],'mocap_seed':1},
                                **({'local_origin':[2,-1,0], 'sensor':{'backend':'cpu','rate_hz':20,'h_res':72,'v_res':16,'h_fov_deg':90,'v_fov_deg':30}} if kind=='fs150' else {})}
                               for kind in ('fs150','scout','mecanum')]}
         (out/'world.json').write_text(json.dumps(config, indent=2))
@@ -100,13 +91,13 @@ def main():
             subscriptions.append(rospy.Subscriber(topic,typ,record,queue_size=1000))
         for kind in ('fs150','scout','mecanum'):
             base='/'+kind
-            subscribe(kind+'.truth',base+'/simulation/body_pose',PoseStamped)
             subscribe(kind+'.canonical',base+'/pose',PoseStamped)
             subscribe(kind+'.canonical_twist',base+'/twist',TwistStamped)
             subscribe(kind+'.mocap','/vrpn_client_node'+base+'/pose',PoseStamped)
-            subscribe(kind+'.pose',base+('/mavros/local_position/pose' if kind=='fs150' else '/simulation/pose'),PoseStamped)
-            subscribe(kind+'.velocity',base+('/mavros/local_position/velocity_local' if kind=='fs150' else '/simulation/velocity'),TwistStamped)
-            subscribe(kind+'.odom',base+('/mavros/local_position/odom' if kind=='fs150' else '/odom'),Odometry)
+            if kind=='fs150':
+                subscribe(kind+'.pose',base+'/mavros/local_position/pose',PoseStamped)
+                subscribe(kind+'.velocity',base+'/mavros/local_position/velocity_local',TwistStamped)
+                subscribe(kind+'.odom',base+'/mavros/local_position/odom',Odometry)
         subscribe('fs150.state','/fs150/mavros/state',State)
         subscribe('fs150.imu','/fs150/mavros/imu/data',Imu)
         subscribe('fs150.target','/fs150/mavros/setpoint_raw/target_attitude',AttitudeTarget)
@@ -121,26 +112,59 @@ def main():
         assert rospy.wait_for_message('/xsim_private/canonical_ready',Bool,timeout=8).data
         providers={}
         for kind in ('fs150','scout','mecanum'):
-            rospy.wait_for_service('/'+kind+'/simulation/provider',5)
-            providers[kind]=rospy.ServiceProxy('/'+kind+'/simulation/provider',SetProvider)
-            r=providers[kind](0,0);assert r.accepted and not r.enabled and r.generation==0
+            providers[kind]=NativeProvider(sock,kind)
+            r=providers[kind].read();assert not r['enabled'] and r['generation']==0
         rospy.wait_for_service('/fs150/mavros/cmd/arming',5)
         offline=rospy.ServiceProxy('/fs150/mavros/cmd/arming',CommandBool)(True)
         assert not offline.success and offline.result==4
         time.sleep(.15)
         for provider in providers.values():
-            r=provider(1,0);assert r.accepted and r.enabled and r.generation==1
+            r=provider.start(0);assert r['success'] and r['enabled'] and r['generation']==1
+        # Both accepted active-generation fences preserve the running provider.
+        for generation in (1,0):
+            r=providers['fs150'].start(generation)
+            assert r['success'] and r['enabled'] and r['generation']==1,r
+        provider_path='/entities/'+str(providers['fs150'].entity_id)+'/provider'
+        retry_payload={'instance_id':instance,'request_id':'provider-idempotent',
+                       'generation':1,'action':'start','timeout_ms':5000}
+        code,receipt=http('POST',provider_path,retry_payload);assert code==202,(code,receipt)
+        def provider_applied():
+            receipt=get('/requests/provider-idempotent')
+            return receipt if receipt['phase'] in ('applied','cancelled','failed') else None
+        receipt=until(provider_applied,'provider idempotent applied')
+        assert receipt['phase']=='applied' and receipt['result']['applied'] and receipt['result']['success'],receipt
+        assert receipt['result']['enabled'] and receipt['result']['generation']==1,receipt
+        code,replayed=http('POST',provider_path,retry_payload)
+        assert code==200 and replayed==receipt,(code,replayed,receipt)
+        code,_=http('POST',provider_path,{**retry_payload,'action':'stop'});assert code==409
+        for invalid in ({'request_id':'provider-numeric-action','action':1},
+                        {'request_id':'provider-negative-generation','generation':-1}):
+            code,result=http('POST',provider_path,{**retry_payload,**invalid});assert code==400,(code,result)
+        code,result=http('DELETE',provider_path,{**retry_payload,'request_id':'provider-wrong-method'})
+        assert code==404,(code,result)
+        state=providers['fs150'].read();assert state['enabled'] and state['generation']==1,state
         def sample(key):
             with state_lock:return latest.get(key)
         def step(n):
             r=mutation('/step',{'steps':n});return r['simulation_time_ns']
+        def ros_graph():
+            code,description,state=rpc.getSystemState('/xsim_private_validation')
+            assert code==1,description
+            checked=assert_retired_ros_surfaces_absent(state,providers,('scout','mecanum'))
+            publishers={name:set(nodes) for name,nodes in state[0]}
+            for kind in providers:
+                for suffix in ('/pose','/twist'):
+                    assert publishers.get('/'+kind+suffix)=={'/xsim_canonical_fixture'},publishers
+            return checked
         stamp=step(10)
         for kind in providers:
-            until(lambda: sample(kind+'.pose') and sample(kind+'.pose').header.stamp.to_nsec()==stamp,kind+' pose')
-        p=sample('fs150.pose'); truth=sample('fs150.truth')
+            key=kind+('.pose' if kind=='fs150' else '.mocap')
+            until(lambda: sample(key) and sample(key).header.stamp.to_nsec()==stamp,kind+' pose')
+        until(lambda: sample('fs150.mocap') and sample('fs150.mocap').header.stamp.to_nsec()==stamp,'FS150 world measurement')
+        p=sample('fs150.pose'); measurement=sample('fs150.mocap')
         assert abs(p.pose.position.x)<1e-12 and abs(p.pose.position.y)<1e-12
-        assert abs(truth.pose.position.x-2)<1e-12 and abs(truth.pose.position.y+1)<1e-12
-        assert truth.header.frame_id=='world' and p.header.stamp.to_nsec()==epoch+10_000_000
+        assert abs(measurement.pose.position.x-2)<1e-12 and abs(measurement.pose.position.y+1)<1e-12
+        assert measurement.header.frame_id=='world' and p.header.stamp.to_nsec()==epoch+10_000_000
         assert sample('fs150.imu').header.frame_id=='base_link'
         for kind in ('fs150','scout','mecanum'):
             until(lambda: sample(kind+'.canonical') and sample(kind+'.canonical').header.stamp.to_nsec()==stamp, kind+' original Adapter projection')
@@ -149,6 +173,7 @@ def main():
             assert abs(projected.pose.position.y-source.pose.position.y+.2)<1e-12
             assert abs(projected.pose.position.z-source.pose.position.z-.3)<1e-12
             assert projected.header.frame_id==source.header.frame_id=='world'
+        graph_report=ros_graph()
         assert p.header.frame_id=='map'
         until(lambda: sample('fs150.raw_imu'), 'raw IMU')
         assert sample('fs150.raw_imu').orientation_covariance[0]==-1
@@ -172,31 +197,35 @@ def main():
             p.position.x=.5;p.position.y=.5;p.position.z=1;p.yaw=.6;publisher.publish(p);time.sleep(.015)
         setpoint();assert mode(0,'OFFBOARD').mode_sent
         for _ in range(30): setpoint();stamp=step(20)
-        until(lambda: sample('fs150.truth').header.stamp.to_nsec()==stamp,'flight sample')
-        flight=sample('fs150.truth');assert flight.pose.position.z>.02
+        until(lambda: sample('fs150.mocap').header.stamp.to_nsec()==stamp,'flight measurement')
+        flight=sample('fs150.mocap');assert flight.pose.position.z>.02
         assert sample('fs150.target').thrust>0
         r=arm(False);assert not r.success and r.result==2
         until(lambda: sample('fs150.cloud') and sample('fs150.cloud').width>0,'real CPU point cloud')
         cloud=sample('fs150.cloud');assert epoch<cloud.header.stamp.to_nsec()<=stamp
-        fs_report={'nonzero_world_position':[truth.pose.position.x,truth.pose.position.y,truth.pose.position.z],
+        fs_report={'nonzero_world_position':[measurement.pose.position.x,measurement.pose.position.y,measurement.pose.position.z],
+                   'world_measurement_topic':'/vrpn_client_node/fs150/pose','mocap_noise_std':[0,0,0],
                    'initial_local_position':[0,0,0], 'initial_stamp_ns':epoch+10_000_000,
                    'flight_position':[flight.pose.position.x,flight.pose.position.y,flight.pose.position.z],
                    'target_thrust':sample('fs150.target').thrust,'arm_ground_result':0,'airborne_disarm_result':r.result,
                    'mode_sent_without_stream':True,'mode_without_stream':'POSCTL','forced_arm_result':3,
                    'cloud_points':cloud.width,'cloud_stamp_ns':cloud.header.stamp.to_nsec()}
+        fs_report['native_provider_boundaries']=['active_current_generation','active_previous_generation',
+            'identical_request_replay','request_id_payload_conflict','numeric_action_rejected',
+            'negative_generation_rejected','provider_wrong_method_rejected']
         # Paused provider/reset is an execution boundary, without any clock advance.
-        frozen=get('/status')['simulation_time_ns'];r=providers['fs150'](2,1);assert r.accepted and not r.enabled
+        frozen=get('/status')['simulation_time_ns'];r=providers['fs150'].stop(1);assert r['success'] and not r['enabled']
         until(lambda: sample('fs150.state') and not sample('fs150.state').connected, 'paused provider state transition')
         rospy.wait_for_service('/fs150/mavros/cmd/arming',5)
         offline=arm(True);assert not offline.success and offline.result==4
-        r=providers['fs150'](1,1);assert r.accepted and r.generation==2
-        r=providers['fs150'](2,1);assert not r.accepted and r.reason==1 and r.generation==2
+        r=providers['fs150'].start(1);assert r['success'] and r['generation']==2
+        r=providers['fs150'].stop(1);assert not r['success'] and r['reason']==1 and r['generation']==2
         assert get('/status')['simulation_time_ns']==frozen
         # A future command from the old generation cannot survive provider reset.
         old=PositionTarget();old.header.stamp=rospy.Time.from_sec((frozen+200_000_000)/1e9);old.coordinate_frame=1;old.type_mask=3527;old.velocity.x=1
         publisher.publish(old);time.sleep(.03)
-        r=providers['fs150'](2,2);assert r.accepted
-        r=providers['fs150'](1,2);assert r.accepted and r.generation==3
+        r=providers['fs150'].stop(2);assert r['success']
+        r=providers['fs150'].start(2);assert r['success'] and r['generation']==3
         step(300);assert not sample('fs150.state').armed
         fs_report['provider_reset_generation']=3;fs_report['stale_stop_reason']=1;fs_report['offline_arm_result']=4;fs_report['paused_state_transition']=True
         fs_report['future_old_generation_did_not_arm_or_move']=True
@@ -212,26 +241,37 @@ def main():
                 m=Twist();m.linear.x,m.linear.y,m.angular.z=u;pub.publish(m)
             time.sleep(.03);stamp=step(1000)
             for k in pubs:
-                until(lambda: all(sample(k+suffix) and sample(k+suffix).header.stamp.to_nsec()==stamp for suffix in ('.mocap','.mocap_velocity','.odom')),k+' matched source checkpoint')
-                p=sample(k+'.mocap').pose.position;v=sample(k+'.mocap_velocity').twist.linear;o=sample(k+'.odom')
+                until(lambda: all(sample(k+suffix) and sample(k+suffix).header.stamp.to_nsec()==stamp for suffix in ('.mocap','.mocap_velocity','.canonical','.canonical_twist')),k+' matched measurement checkpoint')
+                p=sample(k+'.mocap').pose.position;v=sample(k+'.mocap_velocity').twist.linear
                 actual=[p.x,p.y,p.z,v.x,v.y,v.z]
                 ref=references[k]['checkpoints'][idx];expected=ref['position']+ref['velocity']
                 error=max(abs(a-b) for a,b in zip(actual,expected));max_error[k]=max(max_error[k],error)
                 assert error<1e-9,(k,idx,error,actual,expected)
-                assert o.child_frame_id=='base_link' and o.header.frame_id=='world'
+                raw=sample(k+'.mocap');projected=sample(k+'.canonical')
+                assert raw.header.frame_id==projected.header.frame_id=='world'
+                for axis,offset in zip(('x','y','z'),(.4,-.2,.3)):
+                    assert abs(getattr(projected.pose.position,axis)-getattr(raw.pose.position,axis)-offset)<1e-12
+                raw_twist=sample(k+'.mocap_velocity');projected_twist=sample(k+'.canonical_twist')
+                assert raw_twist.header.frame_id==projected_twist.header.frame_id=='world'
+                for part in ('linear','angular'):
+                    for axis in ('x','y','z'):
+                        assert abs(getattr(getattr(projected_twist.twist,part),axis)-getattr(getattr(raw_twist.twist,part),axis))<1e-12
                 ground_samples[k].append({'step':(idx+1)*1000,'stamp_ns':stamp,'position':actual[:3],'velocity':actual[3:]})
         for k in pubs:
-            rospy.wait_for_service('/'+k+'/simulation/reset',5)
-            before=providers[k](0,0).generation
-            r=rospy.ServiceProxy('/'+k+'/simulation/reset',Trigger)();assert r.success
-            after=providers[k](0,0).generation;assert after==before+1
-            stale=providers[k](2,before);assert not stale.accepted and stale.reason==1
+            before=providers[k].read()['generation']
+            r=mutation('/reset',{'entity_id':providers[k].entity_id,'generation':before})
+            assert r['entity_id']==providers[k].entity_id and r['generation']==before+1 and r['enabled'],r
+            after=providers[k].read()['generation'];assert after==before+1
+            stale=providers[k].stop(before);assert not stale['success'] and stale['reason']==1
             stamp=step(20)
-            until(lambda: sample(k+'.pose').header.stamp.to_nsec()==stamp,k+' reset pose')
-            p=sample(k+'.pose').pose.position;assert abs(p.x-2)<1e-12 and abs(p.y+1)<1e-12
+            until(lambda: sample(k+'.mocap').header.stamp.to_nsec()==stamp,k+' reset measurement')
+            p=sample(k+'.mocap').pose.position;assert abs(p.x-2)<1e-12 and abs(p.y+1)<1e-12
             reports[k]={'max_abs_pose_velocity_error':max_error[k],'tolerance':1e-9,'checkpoints':ground_samples[k],
-                        'provider_initial_generation':1,'reset_generation':after,'stale_provider_reason':stale.reason,
-                        'reset_position':[p.x,p.y,p.z],'world_frame':'world','odometry_child_frame':'base_link'}
+                        'provider_initial_generation':1,'reset_generation':after,'stale_provider_reason':stale['reason'],
+                        'reset_position':[p.x,p.y,p.z],'world_frame':'world',
+                        'measurement_topics':['/vrpn_client_node/'+k+'/pose','/vrpn_client_node/'+k+'/twist'],
+                        'mocap_noise_std':[0,0,0]}
+        graph_report=ros_graph()
         # Failed preparation must never commit an entity or silently select CPU.
         code,receipt=http('POST','/entities',{'instance_id':instance,'request_id':'unavailable-gpu','entity':{'name':'unavailable_gpu','kind':'scout','sensor':{'backend':'gpu'}}})
         assert code==202,receipt
@@ -250,7 +290,7 @@ def main():
             report.update(result='PASS',baseline='fed3fdc3d6625d9020d363bb5b9c3c8f8f2c72a6',
                 scope='Private ROS source/MAVROS/UGV contract plus original unchanged Adapter localization_projection.cpp in private ROS fixture. Full supervised production Adapter lifecycle not executed.',
                 canonical_projection_offset=[.4,-.2,.3], canonical_projection_max_error_below=1e-12,
-                adapter_modified=False)
+                adapter_modified=False, ros_graph=graph_report)
             (out/(kind+'-ros.json')).write_text(json.dumps(report,indent=2)+'\n')
         # One small expansion fixture, same code/config shape at 20 and 100.
         for e in get('/entities')['entities']:
@@ -261,9 +301,9 @@ def main():
                 kind=('fs150','scout','mecanum')[i%3]
                 spec={'name':'scale_'+str(i),'kind':kind,'position':[i*.1,0,0]}
                 if i%5==0:spec['sensor']={'backend':'cpu','rate_hz':30,'h_res':720,'v_res':120,'h_fov_deg':180,'v_fov_deg':60}
-                mutation('/entities',{'entity':spec})
-                rospy.wait_for_service('/scale_'+str(i)+'/simulation/provider',5)
-                r=rospy.ServiceProxy('/scale_'+str(i)+'/simulation/provider',SetProvider)(1,0);assert r.accepted
+                added=mutation('/entities',{'entity':spec})
+                until(lambda: any(e['id']==added['entity_id'] for e in get('/entities')['entities']), 'added entity projection')
+                r=NativeProvider(sock,'scale_'+str(i)).start(0);assert r['success']
             initial=get('/status');start=time.monotonic();mutation('/resume');time.sleep(2);mutation('/pause');elapsed=time.monotonic()-start;end=get('/status')
             proc={}
             for line in Path('/proc/'+str(server.pid)+'/status').read_text().splitlines():

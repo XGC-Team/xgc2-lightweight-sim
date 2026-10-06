@@ -1,16 +1,16 @@
 # xgc2-xsim
 
-One independent ROS1 simulation server per world. `xsim` owns entity identity,
+One independent simulation server per world, with an optional ROS1 boundary. `xsim` owns entity identity,
 physical state, provider generations and the simulation clock. It runs FS150,
 Scout and Mecanum together. It does not load a sync-runtime Host or plugin.
 
 ## Build, install and package
 
-Requires C++17, CMake 3.16, Eigen3, nlohmann-json, ROS Noetic (`roscpp`,
-`geometry_msgs`, `sensor_msgs`, `nav_msgs`, `std_srvs`, `rosgraph_msgs`,
+Requires C++17, CMake 3.16, Eigen3, nlohmann-json and yaml-cpp. The default
+`XSIM_ROS=ON` build also requires ROS Noetic (`roscpp`,
+`geometry_msgs`, `sensor_msgs`, `nav_msgs`, `rosgraph_msgs`,
 `mavros_msgs`), the installed robotics interface headers, xgc2-math headers,
-and the owning FS150 SITL assets. First install this repository's
-`src/xgc2_lightweight_sim_msgs` catkin package and the sensor owner's standalone
+and the owning FS150 SITL assets. First install the sensor owner's standalone
 `convex_geometry/xgc2_world_lidar/library` CMake package into the chosen prefix.
 No host installation is needed to build/test into a private prefix.
 
@@ -31,6 +31,13 @@ cmake --install /private/xsim-build
 cpack --config /private/xsim-build/CPackConfig.cmake
 ```
 
+`-DXSIM_ROS=OFF` builds the same world, robot/sensor systems and native Unix
+server without finding, including or linking ROS. With `XSIM_TESTS=ON`, CTest
+runs the model/world checks and `xsim_native_headless`; the pinned replay tests
+also run when their existing reference-source options are supplied. The native
+clock remains the world integer time; `/clock` publication belongs to ROS IO.
+`XSIM_ROS=OFF ./src/xsim/test.sh` selects this build in the existing test script.
+
 The installed executable is `bin/xsim`; configuration and extracted FS150 asset
 provenance are under `share/xsim`. The archive contains xsim, not its external
 ROS/geometry dependencies. Build both the sensor library with
@@ -40,6 +47,21 @@ real GPU/GL context at runtime. An unavailable backend is reported explicitly;
 there is no CPU fallback. The fixed GPU renderer's GPL license accompanies its
 installed shader assets.
 
+## Source and extension points
+
+`src/xsim/core/` contains entity identity, data components, commands and the one
+world roster/boundary scheduler. `systems/robots.*` prepares and steps the three
+concrete models; `systems/sensors.*` owns the original sensor backends/workers.
+`models/` contains the unchanged numerical headers and sealed PX4 source.
+`io/config.*`, `io/native_rpc/` and `io/ros/` own configuration and transports;
+`main.cpp` composes their concrete objects.
+
+A robot kind adds its model/columns and explicit prepare/step branches. A sensor
+uses the existing optional component and boundary sampler. IO resources belong
+to each existing Entity attachment and retire with it; snapshots remain weak.
+Native preparation and actual ROS services reuse the same two service workers.
+There is no second entity roster, plugin registry, or extra event bus.
+
 ## Process/configuration contract
 
 ```sh
@@ -48,7 +70,7 @@ ROS_MASTER_URI=http://127.0.0.1:PRIVATE_PORT \
   /private/install/bin/xsim --config /private/world.json --socket /private/world.sock
 ```
 
-Core's future integration owns desired configuration, the ROS master/time-domain
+Core owns desired configuration, the ROS master/time-domain
 selection, socket directory, process spawning/supervision and restart. It must
 supply a unique `instance_id` and a positive integer `epoch_ns` from the formal
 session time domain; the example epoch is illustrative, not a production default.
@@ -67,11 +89,12 @@ not rotate ENU axes or double-transform body setpoints. `ground_z` defaults to 0
 `fcu_parameters` is the original validated PX4 parameter-name/value object,
 restricted to FS150. No gains, plant parameters or PX4 call periods were retuned.
 
-Entities are initially provider-disabled, generation 0. Start/stop use the
-existing `xgc2_lightweight_sim_msgs/SetProvider` ROS service. Start inactive uses
-CAS on current generation, resets just that body, increments generation and
-enables it. An active retry accepts current or predecessor generation. Stop
-requires current generation. Observe (`action=0`) never starts or resets anything.
+Entities are initially provider-disabled, generation 0. Provider state is read
+with `GET /entities`; start/stop use `POST /entities/<id>/provider` on the Unix
+management socket. Starting an inactive provider uses CAS on current generation,
+resets just that body, increments generation and enables it. An active start
+accepts current or predecessor generation without resetting it again. Stop
+requires current generation. Reading the entity projection never starts or resets anything.
 FS150 after stop continues its original passive last-motor physics while measured
 outputs are gated. Ground providers stop their applicable velocity input (Scout's
 original delayed response still settles); restarting resets the body. Ground
@@ -97,11 +120,10 @@ the listed key; `frame` defaults to `map` for FS150 and `world` for UGV,
 
 | Config key | Default suffix/path | Type / semantics |
 |---|---|---|
-| `truth_topic` | `/simulation/body_pose` | PoseStamped, world truth |
 | `mocap_topic` | `/vrpn_client_node/<name>/pose` | PoseStamped, measurement source |
-| `pose_topic` | `/mavros/local_position/pose` (FS150), `/simulation/pose` (UGV) | PoseStamped, local-origin translation |
-| `velocity_topic` | `/mavros/local_position/velocity_local` (FS150), `/simulation/velocity` (UGV) | TwistStamped, world axes |
-| `odometry_topic` | `/mavros/local_position/odom` (FS150), `/odom` (UGV) | Odometry, twist rotated into body child frame |
+| `pose_topic` | `/mavros/local_position/pose` | FS150 PoseStamped, local-origin translation |
+| `velocity_topic` | `/mavros/local_position/velocity_local` | FS150 TwistStamped, world axes |
+| `odometry_topic` | `/mavros/local_position/odom` | FS150 Odometry, twist rotated into body child frame |
 | `mocap_velocity_topic` | `/vrpn_client_node/<name>/twist` | TwistStamped, original world axes |
 | `raw_imu_topic` | `/mavros/imu/data_raw` | FS150 specific force/gyro, orientation covariance -1 |
 | `imu_topic` | `/mavros/imu/data` | FS150, body specific force/gyro, measured attitude |
@@ -110,14 +132,14 @@ the listed key; `frame` defaults to `map` for FS150 and `world` for UGV,
 | `setpoint_topic`, `attitude_topic` | `/mavros/setpoint_raw/local`, `/mavros/setpoint_raw/attitude` | Original PositionTarget/AttitudeTarget masks/frames |
 | `cmd_vel_topic` | `/cmd_vel` | UGV Twist, body forward/left/yaw rate; Scout ignores left |
 | `arming_service`, `command_service`, `mode_service` | `/mavros/cmd/arming`, `/mavros/cmd/command`, `/mavros/set_mode` | Original MAVROS services, FS150 only |
-| `provider_service` | `/simulation/provider` | SetProvider, all kinds |
-| `reset_service` | `/simulation/reset` | Trigger, resets this generation at world boundary |
 
 `mocap_noise: [sx,sy,sz]` and `mocap_seed` (default 1) configure the original
 publication-boundary Gaussian position noise, independently of truth and local
 FCU feedback. The canonical `/<name>/pose` remains the existing measurement
 Adapter's responsibility; xsim supplies its original measurement source, not a
-truth substitute. The private test consumes the unchanged original Adapter projection function and
+truth substitute. UGV pose/twist outputs originate only at
+`/vrpn_client_node/<name>/{pose,twist}`; the Adapter projects them to
+`/<name>/{pose,twist}`. The private test consumes the unchanged original Adapter projection function and
 checks canonical offsets/stamps over ROS. Full production Adapter supervision and
 adoption remain subsequent integration work.
 
@@ -134,12 +156,14 @@ new subscription has no sender generation field; external senders must stop thei
 old stream before restarting the provider. TCPROS data already queued by external
 subscribers cannot be retracted.
 
-Core 保留当前 plant manifest 的特例路径时，显式传入
-`ros.truth_topic="/xgc/simulation/body/<name>/pose"` 和
-`ros.provider_service="/xgc/lightweight/providers/<name>"`；同时沿原 recipe 填入
+Core 沿原 recipe 填入
 `ros.mocap_noise=[1e-7,1e-7,1e-7]` 及原 `sim_mocap_noise_seed` 的数值到
 `ros.mocap_seed`。当前 manifest 的 MAVROS `map`、mocap `world` 和 `base_link`
 已是默认值。每个配置只有一个实际 topic/service，不创建旧新 alias 或兼容双实现。
+
+Provider lifecycle and reset use the Unix management API. Retired truth/provider/
+reset ROS configuration keys are rejected; MAVROS pose/velocity/odometry overrides
+are accepted only for FS150.
 
 ## Unix HTTP/JSON management
 
@@ -148,16 +172,21 @@ carry pose/velocity streams.
 
 - `GET /status`: instance, steps, simulation time, pause, lifetime wall RTF, current
   lag, latest/max step latency, output/coalescing misses, per-sensor latency/misses/errors.
-- `GET /entities`: actual ID/generation/name/kind/enabled projection.
+- `GET /entities`: `instance_id` and the actual numeric ID/generation,
+  name/kind/enabled projection.
 - `POST /entities`: add `entity` (same object as configuration).
 - `DELETE /entities/<id>`: remove with `generation`.
+- `POST /entities/<id>/provider`: start or stop that exact entity with numeric
+  `generation` and `action: "start"` or `"stop"`. Start prepares the body model
+  outside the physics thread, then the same world boundary applies the command.
 - `POST /pause`, `/resume`, `/step` (`steps` integer), `/reset`.
   Reset optionally takes `entity_id` and `generation`; otherwise resets the world.
 - `GET /requests/<request_id>`: accepted/executing/applied/cancelled/failed receipt.
 
 Every mutation requires `instance_id`, nonempty `request_id`, and optional
 `timeout_ms` (1..5000, default 1500). 202 means **accepted**, not applied. Poll the
-receipt for `result.success`, `reason`, generation and actual step/time. Reasons:
+receipt for `result.applied`, `success`, `reason`, numeric `entity_id`/`generation`,
+`enabled` and actual step/time. Reasons:
 0 success, 1 stale identity/generation, 2 denied/invalid, 3 unsupported, 4 duplicate
 name, 5 execution/resource error. Duplicate IDs with identical payload return the
 same receipt; changed payload is 409. Receipts remain five minutes; supervisors

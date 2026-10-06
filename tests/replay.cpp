@@ -1,7 +1,8 @@
 // Same-input replay against the actual pre-xsim owning plugin, loaded
 // privately. The reference source is extracted by validate.sh at the pinned
 // commit; no old implementation is compiled into or installed with xsim.
-#include "xsim/world.hpp"
+#include "core/world.hpp"
+#include "io/config.hpp"
 #include <cassert>
 #include <cstring>
 #include <dlfcn.h>

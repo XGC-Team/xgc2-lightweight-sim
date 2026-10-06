@@ -1,8 +1,0 @@
-uint8 action
-uint64 generation
----
-bool accepted
-bool enabled
-uint32 reason
-uint64 generation
-string message

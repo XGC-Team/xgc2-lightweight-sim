@@ -1,4 +1,5 @@
-#include "xsim/sensors.hpp"
+#include "systems/sensors.hpp"
+#include "io/runtime_io.hpp"
 #include <cassert>
 #include <fstream>
 #include <iostream>
@@ -36,6 +37,41 @@ void start(World &w, const std::shared_ptr<Entity> &e) {
   assert(t->result.success && e->enabled);
 }
 int main() {
+  const auto rejected_ros_key = [](const char *kind, const char *key) {
+    bool rejected = false;
+    try {
+      parse_entity({{"name", "obsolete"}, {"kind", kind},
+                    {"ros", {{key, "/obsolete/interface"}}}});
+    } catch (const std::invalid_argument &) {
+      rejected = true;
+    }
+    assert(rejected);
+  };
+  for (const char *kind : {"fs150", "scout", "mecanum"})
+    for (const char *key : {"provider_service", "truth_topic", "reset_service"})
+      rejected_ros_key(kind, key);
+  for (const char *key : {"pose_topic", "velocity_topic", "odometry_topic"}) {
+    for (const char *kind : {"scout", "mecanum"})
+      rejected_ros_key(kind, key);
+    assert(parse_entity({{"name", "flight"}, {"kind", "fs150"},
+                         {"ros", {{key, "/flight/mavros"}}}}).kind == Kind::FS150);
+  }
+  // The single Entity owns its concrete IO attachment. Weak snapshots and
+  // public projections cannot extend removed resource lifetimes.
+  {
+    World owner(1700000000000000000LL);
+    auto entity = add(owner, "scout", "io_owner");
+    entity->io = std::make_shared<EntityIO>();
+    std::weak_ptr<EntityIO> attachment = entity->io;
+    auto frame = owner.capture();
+    auto removal = request(owner, Op::Remove, {entity->id, entity->generation});
+    execute(owner, removal);
+    assert(removal->result.success);
+    entity.reset();
+    assert(!attachment.expired()); // Original retired command owns cleanup.
+    removal->retired.reset();
+    assert(attachment.expired() && frame.states.front().entity.expired());
+  }
   // Output deadlines stay on the epoch grid even when dt does not divide the
   // output period. This is the original plant's 3 ms / 10 ms schedule.
   World rate_grid(1700000000000000000LL,3000000,10000000);
@@ -164,8 +200,7 @@ int main() {
                                                {"position", {4, 0, 0}},
                                                {"size", {1, 2, 2}}}})}},
                   2);
-  auto se =
-      std::make_shared<Entity>(parse_entity({{"name", "sensor"},
+  const Json sensor_fixture = {{"name", "sensor"},
                                              {"kind", "scout"},
                                              {"sensor",
                                               {{"backend", "cpu"},
@@ -174,12 +209,13 @@ int main() {
                                                {"h_res", 1000},
                                                {"v_res", 200},
                                                {"rate_hz", 1000},
-                                               {"translation", {1, 0, 0}}}}}));
+                                               {"translation", {1, 0, 0}}}}};
+  auto se = std::make_shared<Entity>(parse_entity(sensor_fixture));
   se->id = 9;
   se->alive = true;
   se->enabled = true;
   se->generation = 1;
-  se->sensor = sensors.prepare(se);
+  se->sensor = sensors.prepare(se, sensor_fixture.at("sensor"));
   State s;
   s.entity = se;
   s.key = {9, 1};
@@ -205,7 +241,7 @@ int main() {
   sensors.stop();
   std::cout << Json({{"result", "PASS"},
                      {"checks",
-                      {"three_kinds", "reset_old_generation", "timeout_cancel",
+                      {"retired_ros_config", "entity_io_retirement", "three_kinds", "reset_old_generation", "timeout_cancel",
                        "swap_remove", "old_id", "slow_waiter",
                        "paused_management", "step_exact", "cpu_scan",
                        "mount_pose", "pending_replacement", "stale_scan"}},

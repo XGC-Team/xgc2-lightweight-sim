@@ -1,4 +1,4 @@
-#include "xsim/ros.hpp"
+#include "io/ros/entity.hpp"
 #include <cassert>
 #include <future>
 #include <iostream>
@@ -10,7 +10,12 @@ int main(int argc, char **argv) {
   ros::AsyncSpinner executor(2, &services);
   auto e = std::make_shared<Entity>(
       parse_entity({{"name", "slow_fixture"}, {"kind", "fs150"}}));
-  e->ros = std::make_shared<RosEntity>(e, world, input, services);
+  auto ros_entity = std::make_shared<RosEntity>(e, world, input, services, Json::object());
+  e->io = std::make_shared<EntityIO>(EntityIO{
+    [ros_entity] { ros_entity->reconcile(); },
+    [ros_entity](const State &state) { ros_entity->publish(state); },
+    [ros_entity] { return ros_entity->publish_sensor(); },
+  });
   auto add = std::make_shared<Command>();
   add->op = Op::Add;
   add->prepared =
@@ -24,8 +29,8 @@ int main(int argc, char **argv) {
   ros::NodeHandle n;
   n.setCallbackQueue(&services);
   std::atomic<unsigned> entered{0};
-  boost::function<bool(std_srvs::Trigger::Request &,
-                       std_srvs::Trigger::Response &)>
+  boost::function<bool(mavros_msgs::CommandBool::Request &,
+                       mavros_msgs::CommandBool::Response &)>
       slow = [&](auto &, auto &reply) {
         ++entered;
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
@@ -37,9 +42,9 @@ int main(int argc, char **argv) {
   world.start();
   auto client = [] {
     ros::NodeHandle nh;
-    auto c = nh.serviceClient<std_srvs::Trigger>("/xsim_fixture/slow");
+    auto c = nh.serviceClient<mavros_msgs::CommandBool>("/xsim_fixture/slow");
     assert(c.waitForExistence(ros::Duration(5)));
-    std_srvs::Trigger req;
+    mavros_msgs::CommandBool req;
     assert(c.call(req) && req.response.success);
   };
   auto one = std::async(std::launch::async, client),

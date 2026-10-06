@@ -30,9 +30,6 @@ source /opt/ros/noetic/setup.bash
 sim=/source/ros1/simulator/xsim
 cmake -S /source/common/robotics-interfaces -B /work/robotics -DCMAKE_INSTALL_PREFIX=/work/install
 cmake --install /work/robotics
-cmake -S "$sim/src/xgc2_lightweight_sim_msgs" -B /work/messages -DCMAKE_INSTALL_PREFIX=/work/install -DPYTHON_EXECUTABLE=/usr/bin/python3
-cmake --build /work/messages -j1
-cmake --install /work/messages
 cmake -S /source/ros1/simulator/convex_geometry/xgc2_world_lidar/library -B /work/lidar -DCMAKE_INSTALL_PREFIX=/work/install -DCMAKE_BUILD_TYPE=Release
 cmake --build /work/lidar -j1
 cmake --install /work/lidar
@@ -40,13 +37,12 @@ cmake -S "$sim/src/xsim" -B /work/xsim \
   -DCMAKE_PREFIX_PATH='/work/install;/opt/ros/noetic' -DCMAKE_INSTALL_PREFIX=/work/install \
   -DCMAKE_BUILD_TYPE=Release -DXGC2_MATH_INCLUDE=/source/common/math/include \
   -DFS150_ASSET_SOURCE_ROOT=/source/ros1/simulator/gazebo-sim/fs150-sitl \
-  -DXSIM_TESTS=ON -DPYTHON_EXECUTABLE=/usr/bin/python3 \
+  -DXSIM_ROS=ON -DXSIM_TESTS=ON -DPYTHON_EXECUTABLE=/usr/bin/python3 \
   -DXSIM_BASELINE_SOURCE=/work/src/xgc2_lightweight_sim \
   -DXSIM_BASELINE_SDK=/source/common/sync-runtime \
   -DXSIM_ADAPTER_SOURCE=/source/ros1/communication/ros1-adapter -DXSIM_PRIVATE_ROS_TESTS=ON
 cmake --build /work/xsim -j1
 cmake --install /work/xsim
-export PYTHONPATH="/work/install/lib/python3/dist-packages:${PYTHONPATH:-}"
 cd /work/xsim
 ctest --output-on-failure
 cpack --config CPackConfig.cmake
