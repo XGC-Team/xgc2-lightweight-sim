@@ -41,13 +41,18 @@ struct State {
 };
 struct Frame {
   int64_t stamp = 0;
-  uint64_t steps = 0, revision = 0;
+  // Geometry tokens cover body key/generation/enabled/position, not time.
+  // Zero denotes an ad-hoc fixture snapshot without an authoritative token.
+  uint64_t steps = 0, revision = 0, geometry_revision = 0;
   std::vector<State> states;
 };
 struct Metrics {
-  std::atomic<uint64_t> steps{0}, output_misses{0}, input_misses{0};
+  std::atomic<uint64_t> steps{0}, output_misses{0}, input_misses{0}, frame_array_grows{0};
   std::atomic<int64_t> sim_ns{0}, lag_ns{0}, step_latency_ns{0},
       max_step_latency_ns{0};
+  std::atomic<int64_t> last_dt_ns{0}, scheduling_period_ns{2000000},
+      realtime_ns{0}, active_wall_ns{0};
+  std::atomic<uint64_t> clock_degradations{0};
   std::atomic<bool> paused{false};
 };
 } // namespace xsim

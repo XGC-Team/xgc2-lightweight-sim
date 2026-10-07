@@ -1,12 +1,23 @@
 {
   "instance_id": "example-session-world",
   "epoch_ns": 1700000000000000000,
-  "model_step_ns": 1000000,
-  "output_period_ns": 10000000,
+  "model_step_ns": 2000000,
+  "max_model_step_ns": 10000000,
+  "output_period_ns": 8000000,
   "catchup_batch": 8,
   "paused": true,
   "publish_clock": true,
   "sensor_workers": 2,
+  "publish_workers": 2,
+  "telemetry_rates_hz": {
+    "localization": 125,
+    "local": 30,
+    "imu": 30,
+    "imu_raw": 30,
+    "state": 1,
+    "extended_state": 1,
+    "target": 10
+  },
   "scene": {
     "surface_spacing": 0.1,
     "obstacles": [{"type": "box", "position": [5, 0, 1], "size": [1, 4, 2]}]

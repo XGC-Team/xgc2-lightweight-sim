@@ -132,6 +132,7 @@ public:
     if (columns_) columns_->set(index_, s); else local_ = s;
   }
   const RigidBodyParameters &parameters() const { return parameters_; }
+  const Eigen::Matrix3d &inverse_inertia() const { return inverse_inertia_; }
 
   // Controlled initialization/reset entry. Validates before mutation and
   // normalizes a finite nonzero quaternion; COM coordinates are not shifted.

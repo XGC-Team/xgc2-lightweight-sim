@@ -4,6 +4,7 @@
 #include <csignal>
 #include <deque>
 #include <mutex>
+#include <poll.h>
 #include <thread>
 #include <unordered_map>
 namespace xsim {
@@ -31,9 +32,12 @@ private:
     std::string payload;
     std::shared_ptr<Preparation> preparation;
     bool submitted = false;
+    Json immediate = nullptr;
+    bool terminal_seen = false;
   };
   std::string instance_;
   RuntimeIO io_;
+  Json world_configuration_;
   World &world_;
   Sensors &sensors_;
   struct BoundSocket {
@@ -42,9 +46,11 @@ private:
     ~BoundSocket();
   } socket_;
   std::vector<Client> clients_;
+  std::vector<pollfd> poll_fds_;
   std::unordered_map<std::string, Request> requests_;
   std::mutex view_mutex_;
-  Frame latest_;
+  std::shared_ptr<const Frame> latest_;
+  std::shared_ptr<const TelemetryRates> telemetry_rates_;
   std::thread output_;
   std::atomic<bool> output_running_{false};
   Clock::time_point began_ = Clock::now();
@@ -60,7 +66,9 @@ private:
   void shutdown();
   void output();
   Json status();
-  Frame view();
+  Json telemetry_rates();
+  Json capabilities();
+  std::shared_ptr<const Frame> view();
   Json receipt(const std::string &, const Ticket &);
   Json route(const std::string &, const std::string &, const Json &, int &);
   void reply(Client &);

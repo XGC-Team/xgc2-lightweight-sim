@@ -1,7 +1,14 @@
 #include "sensors.hpp"
 #include <xgc2_world_lidar/scene_conversion.h>
 #include <cstring>
+#include <limits>
 #include <pthread.h>
+#ifdef __linux__
+#include <cerrno>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
 #ifdef XSIM_GPU
 #include <omp.h>
 #endif
@@ -20,6 +27,16 @@ Eigen::Quaterniond quat(const Json &j) {
   if (!q.coeffs().allFinite() || q.norm() < 1e-12)
     throw std::invalid_argument("sensor quaternion invalid");
   return q.normalized();
+}
+bool same_observation(const Sample &a, const Sample &b) {
+  if (a.key.id != b.key.id || a.key.generation != b.key.generation ||
+      a.scene_version != b.scene_version ||
+      !(a.position.array() == b.position.array()).all() ||
+      !(a.orientation.coeffs().array() == b.orientation.coeffs().array()).all())
+    return false;
+  return a.body_observation == b.body_observation &&
+      (!a.body_observation || (a.geometry_revision &&
+                              a.geometry_revision == b.geometry_revision));
 }
 } // namespace
 Sensors::Sensors(const Json &j, unsigned workers) : workers_(workers) {
@@ -80,6 +97,7 @@ std::shared_ptr<Sensor> Sensors::prepare(const std::shared_ptr<Entity> &e, const
   if (j.empty())
     return {};
   auto s = std::make_shared<Sensor>();
+  for (auto &payload : s->payload_pool) payload = std::make_shared<SensorPayload>();
   s->entity = e;
   s->topic = j.value("topic", "/" + e->config.name + "/cloud");
   s->frame = j.value("frame", "world");
@@ -88,7 +106,13 @@ std::shared_ptr<Sensor> Sensors::prepare(const std::shared_ptr<Entity> &e, const
   const auto hz = j.value("rate_hz", 10.0);
   if (!std::isfinite(hz) || hz <= 0 || hz > 1e9)
     throw std::invalid_argument("invalid sensor rate");
-  s->period = std::llround(1e9 / hz);
+  const double requested_period = 1e9 / hz;
+  if (!std::isfinite(requested_period) ||
+      requested_period >= double(std::numeric_limits<int64_t>::max()))
+    throw std::invalid_argument("sensor period is not representable");
+  s->period = std::max<int64_t>(1, std::llround(requested_period));
+  s->cadence = AdaptiveCadence(s->period);
+  s->effective_period_ns = s->period;
   if (j.contains("translation"))
     s->translation = v3(j.at("translation"));
   if (!s->translation.allFinite())
@@ -109,6 +133,8 @@ std::shared_ptr<Sensor> Sensors::prepare(const std::shared_ptr<Entity> &e, const
   c.h_fov_deg = j.value("h_fov_deg", 360.0);
   c.v_fov_deg = j.value("v_fov_deg", 30.0);
   c.noise_std = j.value("noise_std", 0.0);
+  // Only zero-noise CPU scans reuse geometry bytes.
+  s->cacheable = !s->gpu && c.noise_std == 0;
   c.seed = j.value("seed", 0u);
   c.surface_spacing = spacing_;
   c.penetrating_keep_buried = j.value("keep_buried",buried_);
@@ -199,21 +225,99 @@ std::shared_ptr<Sensor> Sensors::prepare(const std::shared_ptr<Entity> &e, const
   wake_.notify_all();
   return s;
 }
-void Sensors::submit(const State &v, const World *world) {
+void Sensors::submit_frame(const std::shared_ptr<const Frame> &frame) {
+  if (!frame) return;
+  if (last_frame_stamp_ && frame->stamp > last_frame_stamp_)
+    source_period_ns_ = frame->stamp - last_frame_stamp_;
+  last_frame_stamp_ = frame->stamp;
+  for (const auto &v : frame->states) submit_sample(v, frame);
+}
+uint64_t Sensors::fixture_geometry_revision(const Frame &frame) {
+  bool changed = !fixture_geometry_revision_ || fixture_geometry_.size() != frame.states.size();
+  if (!changed)
+    for (size_t i = 0; i < fixture_geometry_.size(); ++i) {
+      const auto &previous = fixture_geometry_[i];
+      const auto &current = frame.states[i];
+      if (previous.key.id != current.key.id ||
+          previous.key.generation != current.key.generation ||
+          previous.enabled != current.enabled ||
+          !(previous.position.array() == current.position.array()).all()) {
+        changed = true;
+        break;
+      }
+    }
+  if (changed) {
+    ++fixture_geometry_revision_;
+    fixture_geometry_.resize(frame.states.size());
+    for (size_t i = 0; i < fixture_geometry_.size(); ++i) {
+      const auto &current = frame.states[i];
+      fixture_geometry_[i] = {current.key, current.enabled, current.position};
+    }
+  }
+  return fixture_geometry_revision_;
+}
+void Sensors::submit_frame(const Frame &frame) {
+  auto fixture = std::make_shared<Frame>(frame);
+  fixture->geometry_revision = fixture_geometry_revision(frame);
+  submit_frame(std::shared_ptr<const Frame>(std::move(fixture)));
+}
+void Sensors::submit(const State &v, std::shared_ptr<const Frame> bodies) {
+  submit_sample(v, bodies);
+}
+void Sensors::submit_sample(const State &v, const std::shared_ptr<const Frame> &bodies) {
   auto owner = v.entity.lock();
-  if (!owner)
+  auto s = owner ? owner->sensor : nullptr;
+  if (!s)
     return;
-  auto s = owner->sensor;
-  if (!s || v.stamp < s->next)
+  if (!owner->alive || !owner->enabled || owner->generation != v.key.generation) {
+    std::unique_lock<std::mutex> lock(s->mutex, std::try_to_lock);
+    if (lock.owns_lock() && s->has_pending) {
+      s->has_pending = false;
+      s->pending.bodies.reset();
+      ++s->misses;
+    }
     return;
-  // Absolute simulation schedule; missed samples counted, never change
-  // requested Hz.
-  if (s->next == 0)
-    s->next = v.stamp;
-  const auto due = uint64_t((v.stamp - s->next) / s->period) + 1;
-  s->next += int64_t(due) * s->period;
-  if (due > 1)
-    s->misses += due - 1;
+  }
+  if (s->schedule_generation != v.key.generation) {
+    s->schedule_generation = v.key.generation;
+    s->next = s->next_requested = v.stamp;
+    s->effective_period_ns = s->period;
+    s->observed_period_ns = 0;
+    s->last_submitted_stamp = 0;
+  }
+  if (s->effective_period_ns > s->period) {
+    std::unique_lock<std::mutex> lock(s->mutex, std::try_to_lock);
+    if (lock.owns_lock() && !s->busy && !s->has_pending && !s->has_completed) {
+      const auto old_period = s->effective_period_ns.load();
+      const auto wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          Clock::now().time_since_epoch()).count();
+      const auto recovered = s->cadence.recover(wall_ns);
+      if (recovered < old_period) {
+        s->effective_period_ns = recovered;
+        ++s->rate_recoveries;
+        if (s->last_submitted_stamp) {
+          const auto interval = std::max(recovered, source_period_ns_.load());
+          const auto limit = std::numeric_limits<int64_t>::max();
+          const auto candidate = s->last_submitted_stamp > limit - interval
+              ? limit : s->last_submitted_stamp + interval;
+          s->next = std::min(s->next, candidate);
+        }
+      }
+    }
+  }
+  if (v.stamp < s->next_requested) return;
+  if (!s->next_requested) s->next_requested = v.stamp;
+  const auto due = uint64_t((v.stamp - s->next_requested) / s->period) + 1;
+  s->next_requested = observation_deadline(s->next_requested, v.stamp, s->period);
+  if (v.stamp < s->next) {
+    s->throttled += due;
+    return;
+  }
+  // Account separately for deliberately lower observation cadence. The input
+  // frame cadence is an upper bound, even while the configured Hz stays intact.
+  if (due > 1) s->throttled += due - 1;
+  const auto period = std::max(s->effective_period_ns.load(), source_period_ns_.load());
+  s->next = observation_deadline(s->next, v.stamp, period);
   std::unique_lock<std::mutex> lock(s->mutex, std::try_to_lock);
   if (!lock.owns_lock()) {
     ++s->misses;
@@ -221,23 +325,37 @@ void Sensors::submit(const State &v, const World *world) {
   }
   if (s->has_pending)
     ++s->misses;
-  s->pending = {v.key,
-                v.stamp,
-                1,
-                v.position + v.orientation * s->translation,
-                v.orientation * s->rotation,
-                Clock::now()};
-  if(s->with_bodies && world) {
-    // One immutable whole-world pose snapshot shared by all sensors due on
-    // this step. No provider/ROS roster supplies or owns these bodies.
-    if(!body_sample_ || body_sample_->stamp!=v.stamp)body_sample_=std::make_shared<const Frame>(world->capture());
-    s->pending.bodies=body_sample_;
+  if (s->with_bodies && !bodies) {
+    ++s->misses;
+    return;
+  }
+  s->pending = {};
+  s->pending.key = v.key;
+  s->pending.stamp = v.stamp;
+  s->pending.position = v.position + v.orientation * s->translation;
+  s->pending.orientation = v.orientation * s->rotation;
+  s->pending.submitted = Clock::now();
+  s->pending.body_observation = s->with_bodies;
+  if (s->with_bodies) {
+    s->pending.bodies = bodies;
+    s->pending.geometry_revision = bodies->geometry_revision;
   }
   s->has_pending = true;
+  s->last_submitted_stamp = v.stamp;
   wake_.notify_all();
 }
 void Sensors::work(bool gpu) {
   pthread_setname_np(pthread_self(), gpu ? "xsim-gpu" : "xsim-sensor");
+#ifdef __linux__
+  // Linux nice is per task: lower only this best-effort observation worker,
+  // leaving World/input/output unchanged. Respect an already lower priority;
+  // an unavailable adjustment simply keeps the inherited scheduler policy.
+  const auto tid = static_cast<id_t>(syscall(SYS_gettid));
+  errno = 0;
+  const int inherited_nice = getpriority(PRIO_PROCESS, tid);
+  if (!errno && inherited_nice < 5)
+    (void)setpriority(PRIO_PROCESS, tid, 5);
+#endif
 #ifdef XSIM_GPU
   if (gpu) {
     omp_set_dynamic(0);
@@ -276,13 +394,26 @@ void Sensors::work(bool gpu) {
         if (!s || s->gpu != gpu)
           continue;
         auto e = s->entity.lock();
-        if (!e || !e->alive || !e->enabled)
+        if (!e || !e->alive || !e->enabled) {
+          std::lock_guard<std::mutex> sl(s->mutex);
+          if (s->has_pending) {
+            s->has_pending = false;
+            s->pending.bodies.reset();
+            ++s->misses;
+          }
           continue;
+        }
         std::lock_guard<std::mutex> sl(s->mutex);
+        if (s->has_pending && s->pending.key.generation != e->generation) {
+          s->has_pending = false;
+          s->pending.bodies.reset();
+          ++s->misses;
+        }
         if (!s->busy && s->has_pending) {
           s->busy = true;
           s->has_pending = false;
-          sample = s->pending;
+          sample = std::move(s->pending);
+          s->pending = {};
           selected = s;
           cursor = (cursor + n + 1) % sensors_.size();
           break;
@@ -294,56 +425,105 @@ void Sensors::work(bool gpu) {
       }
     }
     auto &s = *selected;
-    bool ok = true;
+    bool ok = true, reused = false, payload_pressure = false;
+    std::shared_ptr<const SensorPayload> payload;
+    SensorPayload *writable = nullptr;
+    size_t previous_data_capacity = 0, previous_beam_capacity = 0;
+    if (s.cached_sample.key.generation != sample.key.generation) {
+      s.cache_valid = false;
+      s.cached_payload.reset();
+    }
     try {
-      if (!gpu) {
-        s.others.clear();
-        if(sample.bodies)for(const auto& b:sample.bodies->states)if(b.key.id!=sample.key.id)s.others.push_back({int(b.key.id),b.position,0.3});
-        if(!s.publish_beams)s.cpu->scanInto(sample.position,sample.orientation,s.others,s.with_bodies,&s.scratch);
-        else {
-          const auto beams=s.cpu->scanWithBeams(sample.position,sample.orientation,s.others);
-          const size_t point_stride=s.with_bodies?16:12,beam_stride=s.with_bodies?36:32;
-          s.scratch.clear();s.beam_scratch.resize(beams.size()*beam_stride);size_t at=0;
-          for(const auto& b:beams) {
-            float record[8];for(int k=0;k<3;++k){record[k]=b.origin[k];record[3+k]=b.direction[k];}record[6]=b.range;record[7]=b.hit?1.f:0.f;
-            std::memcpy(s.beam_scratch.data()+at,record,32);if(s.with_bodies)std::memcpy(s.beam_scratch.data()+at+32,&b.vehicle_id,4);at+=beam_stride;
-            if(b.hit){const auto p=b.origin+b.range*b.direction;float xyz[3]={float(p.x()),float(p.y()),float(p.z())};const auto old=s.scratch.size();s.scratch.resize(old+point_stride);std::memcpy(s.scratch.data()+old,xyz,12);if(s.with_bodies)std::memcpy(s.scratch.data()+old+12,&b.vehicle_id,4);}
+      if (s.cacheable && s.cache_valid && same_observation(s.cached_sample, sample)) {
+        payload = s.cached_payload;
+        reused = true;
+      } else {
+        for (size_t offset = 0; offset < Sensor::payload_pool_size; ++offset) {
+          const size_t at = (s.payload_cursor + offset) % Sensor::payload_pool_size;
+          if (s.payload_pool[at].unique()) {
+            std::atomic_thread_fence(std::memory_order_acquire);
+            writable = s.payload_pool[at].get();
+            payload = s.payload_pool[at];
+            s.payload_cursor = (at + 1) % Sensor::payload_pool_size;
+            break;
+          }
+        }
+        if (!writable) {
+          ok = false;
+          payload_pressure = true;
+          ++s.payload_misses;
+        } else {
+          previous_data_capacity = writable->data.capacity();
+          previous_beam_capacity = writable->beam_data.capacity();
+          auto &data = writable->data;
+          auto &beam_data = writable->beam_data;
+          beam_data.clear();
+          if (!gpu) {
+            s.others.clear();
+            if(sample.bodies)for(const auto& b:sample.bodies->states)if(b.key.id!=sample.key.id)s.others.push_back({int(b.key.id),b.position,0.3});
+            if(!s.publish_beams)s.cpu->scanInto(sample.position,sample.orientation,s.others,s.with_bodies,&data);
+            else {
+              const auto beams=s.cpu->scanWithBeams(sample.position,sample.orientation,s.others);
+              const size_t point_stride=s.with_bodies?16:12,beam_stride=s.with_bodies?36:32;
+              data.clear();beam_data.resize(beams.size()*beam_stride);size_t at=0;
+              for(const auto& b:beams) {
+                float record[8];for(int k=0;k<3;++k){record[k]=b.origin[k];record[3+k]=b.direction[k];}record[6]=b.range;record[7]=b.hit?1.f:0.f;
+                std::memcpy(beam_data.data()+at,record,32);if(s.with_bodies)std::memcpy(beam_data.data()+at+32,&b.vehicle_id,4);at+=beam_stride;
+                if(b.hit){const auto p=b.origin+b.range*b.direction;float xyz[3]={float(p.x()),float(p.y()),float(p.z())};const auto old=data.size();data.resize(old+point_stride);std::memcpy(data.data()+old,xyz,12);if(s.with_bodies)std::memcpy(data.data()+old+12,&b.vehicle_id,4);}
+              }
+            }
+          }
+#ifdef XSIM_GPU
+          else {
+            const auto &points = renderer->scan(sample.position, sample.orientation,
+                double(sample.stamp) * 1e-9, s.gpu_config);
+            data.resize(points.size() * 16);
+            size_t at = 0;
+            for (const auto &p : points) {
+              float xyzi[4] = {p.x, p.y, p.z, p.intensity};
+              std::memcpy(data.data() + at, xyzi, 16);
+              at += 16;
+            }
+          }
+#endif
+          if (s.cacheable) {
+            s.cached_sample = sample;
+            s.cached_sample.bodies.reset();
+            s.cached_payload = payload;
+            s.cache_valid = true;
           }
         }
       }
-#ifdef XSIM_GPU
-      else {
-        const auto &points =
-            renderer->scan(sample.position, sample.orientation,
-                           double(sample.stamp) * 1e-9, s.gpu_config);
-        s.scratch.resize(points.size() * 16);
-        size_t at = 0;
-        for (const auto &p : points) {
-          float xyzi[4] = {p.x, p.y, p.z, p.intensity};
-          std::memcpy(s.scratch.data() + at, xyzi, 16);
-          at += 16;
-        }
-      }
-#endif
     } catch (const std::exception &error) {
       ok = false;
       std::lock_guard<std::mutex> l(s.mutex);
       s.error = error.what();
       ++s.errors;
     }
+    if (writable) {
+      if (writable->data.capacity() != previous_data_capacity) ++s.payload_grows;
+      if (writable->beam_data.capacity() != previous_beam_capacity) ++s.payload_grows;
+    }
+    // Raycasting is done. Metadata/publication and the geometry cache must not
+    // retain the world frame or compete with later snapshots for pool slots.
+    sample.bodies.reset();
     {
       std::lock_guard<std::mutex> l(s.mutex);
       s.busy = false;
       auto e = s.entity.lock();
-      if (ok && e && e->alive && e->enabled &&
-          e->generation == sample.key.generation) {
-        if (s.has_completed)
+      if (e && e->alive && e->enabled && e->generation == sample.key.generation &&
+          (ok || payload_pressure)) {
+        const bool output_pressure = ok && s.has_completed;
+        if (output_pressure)
           ++s.misses;
-        s.completed = sample;
-        s.data.swap(s.scratch);
-        s.beam_data.swap(s.beam_scratch);
-        s.has_completed = true;
-        ++s.scans;
+        if (ok) {
+          s.completed = sample;
+          s.completed_payload = std::move(payload);
+          s.has_completed = true;
+          ++s.scans;
+          if (reused) ++s.cache_hits;
+          else ++s.computed_scans;
+        } else ++s.misses;
         const auto elapsed =
             std::chrono::duration_cast<std::chrono::nanoseconds>(
                 Clock::now() - sample.submitted)
@@ -351,13 +531,36 @@ void Sensors::work(bool gpu) {
         s.latency_ns = elapsed;
         if (elapsed > s.max_latency_ns)
           s.max_latency_ns = elapsed;
+        if (s.observed_generation != sample.key.generation) {
+          s.observed_generation = sample.key.generation;
+          s.last_sample_stamp = 0;
+          s.observed_period_ns = 0;
+          s.cadence = AdaptiveCadence(s.period);
+          s.previous_misses = s.misses.load();
+        }
+        if (ok && s.last_sample_stamp && sample.stamp > s.last_sample_stamp) {
+          const auto interval = sample.stamp - s.last_sample_stamp;
+          const auto previous = s.observed_period_ns.load();
+          s.observed_period_ns = previous ? previous - previous / 8 + interval / 8 : interval;
+        }
+        if (ok) s.last_sample_stamp = sample.stamp;
+        const auto misses = s.misses.load();
+        const auto old_period = s.effective_period_ns.load();
+        const auto wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            Clock::now().time_since_epoch()).count();
+        const auto new_period = s.cadence.observe(elapsed,
+            output_pressure || payload_pressure || misses > s.previous_misses, wall_ns);
+        s.previous_misses = misses;
+        s.effective_period_ns = new_period;
+        if (new_period > old_period) ++s.rate_degradations;
+        else if (new_period < old_period) ++s.rate_recoveries;
       } else
         ++s.misses;
     }
   }
 }
-bool Sensors::take(const std::shared_ptr<Sensor> &s, Sample &p,
-                   std::vector<uint8_t> &out, std::vector<uint8_t> *beams) {
+bool Sensors::take_shared(const std::shared_ptr<Sensor> &s, Sample &p,
+                          std::shared_ptr<const SensorPayload> &payload) {
   std::lock_guard<std::mutex> l(s->mutex);
   if (!s->has_completed)
     return false;
@@ -365,12 +568,21 @@ bool Sensors::take(const std::shared_ptr<Sensor> &s, Sample &p,
   s->has_completed = false;
   if (!e || !e->alive || !e->enabled ||
       e->generation != s->completed.key.generation) {
+    s->completed_payload.reset();
     ++s->misses;
     return false;
   }
   p = s->completed;
-  out.swap(s->data);
-  if(beams)beams->swap(s->beam_data);
+  payload = std::move(s->completed_payload);
+  ++s->published;
+  return true;
+}
+bool Sensors::take(const std::shared_ptr<Sensor> &s, Sample &p,
+                   std::vector<uint8_t> &out, std::vector<uint8_t> *beams) {
+  std::shared_ptr<const SensorPayload> payload;
+  if (!take_shared(s, p, payload)) return false;
+  out.assign(payload->data.begin(), payload->data.end());
+  if (beams) beams->assign(payload->beam_data.begin(), payload->beam_data.end());
   return true;
 }
 Json Sensors::status() const {
@@ -382,10 +594,26 @@ Json Sensors::status() const {
       if (!e || !e->alive)
         continue;
       std::lock_guard<std::mutex> sl(s->mutex);
+      const auto source_period = source_period_ns_.load();
+      const auto effective_period = std::max(source_period, s->effective_period_ns.load());
+      const auto observed_period = s->observed_period_ns.load();
       j.push_back({{"id", e->id},
                    {"generation", e->generation.load()},
                    {"scans", s->scans.load()},
                    {"misses", s->misses.load()},
+                   {"throttled_samples", s->throttled.load()},
+                   {"requested_rate_hz", 1e9 / double(s->period)},
+                   {"effective_rate_hz", 1e9 / double(effective_period)},
+                   {"source_rate_hz", source_period ? 1e9 / double(source_period) : 0.0},
+                   {"observed_rate_hz", observed_period ? 1e9 / double(observed_period) : 0.0},
+                   {"cache_hits", s->cache_hits.load()},
+                   {"computed_scans", s->computed_scans.load()},
+                   {"published", s->published.load()},
+                   {"rate_degradations", s->rate_degradations.load()},
+                   {"rate_recoveries", s->rate_recoveries.load()},
+                   {"payload_slots", Sensor::payload_pool_size},
+                   {"payload_grows", s->payload_grows.load()},
+                   {"payload_misses", s->payload_misses.load()},
                    {"latency_ns", s->latency_ns.load()},
                    {"max_latency_ns", s->max_latency_ns.load()},
                    {"errors", s->errors.load()},
@@ -405,5 +633,17 @@ void Sensors::stop() {
       t.join();
   if (gpu_thread_.joinable())
     gpu_thread_.join();
+  std::lock_guard<std::mutex> l(mutex_);
+  for (const auto &weak : sensors_)
+    if (auto sensor = weak.lock()) {
+      std::lock_guard<std::mutex> sl(sensor->mutex);
+      sensor->has_pending = false;
+      sensor->pending.bodies.reset();
+      sensor->completed.bodies.reset();
+      sensor->cached_sample.bodies.reset();
+      sensor->completed_payload.reset();
+      sensor->cached_payload.reset();
+      sensor->has_completed = false;
+    }
 }
 } // namespace xsim

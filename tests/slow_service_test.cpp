@@ -5,15 +5,15 @@
 using namespace xsim;
 int main(int argc, char **argv) {
   ros::init(argc, argv, "xsim_slow_service_fixture");
-  World world(1700000000000000000LL);
   ros::CallbackQueue input, services;
+  World world(1700000000000000000LL);
   ros::AsyncSpinner executor(2, &services);
   auto e = std::make_shared<Entity>(
       parse_entity({{"name", "slow_fixture"}, {"kind", "fs150"}}));
   auto ros_entity = std::make_shared<RosEntity>(e, world, input, services, Json::object());
   e->io = std::make_shared<EntityIO>(EntityIO{
     [ros_entity] { ros_entity->reconcile(); },
-    [ros_entity](const State &state) { ros_entity->publish(state); },
+    [ros_entity](const State &state, const TelemetryRates &rates) { ros_entity->publish(state, rates); },
     [ros_entity] { return ros_entity->publish_sensor(); },
   });
   auto add = std::make_shared<Command>();

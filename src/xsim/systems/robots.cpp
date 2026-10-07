@@ -15,9 +15,13 @@ void step_robot(Flight &f, bool enabled, double h) {
     f.model.stepPhysicsOnly(h);
 }
 void step_robot(Scout &s, int64_t dt) {
-  ++s.steps;
-  s.age = double(int64_t(s.steps) * dt) * 1e-9;
-  s.model.advance(s.age);
+  if (dt < 0 || dt > INT64_MAX - s.age_ns)
+    throw std::invalid_argument("scout model: invalid elapsed time");
+  const auto next_ns = s.age_ns + dt;
+  const double next_age = double(next_ns) * 1e-9;
+  s.model.advance(next_age);
+  s.age_ns = next_ns;
+  s.age = next_age;
 }
 void step_robot(Mecanum &m, double h) { m.model.step(h); }
 } // namespace xsim

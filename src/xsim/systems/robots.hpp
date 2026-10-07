@@ -13,7 +13,7 @@ struct Flight {
 struct Scout {
   ScoutModel model;
   double age = 0;
-  uint64_t steps = 0;
+  int64_t age_ns = 0;
   explicit Scout(const Config &c) : model({c.initial.head<2>(), c.yaw}) {}
 };
 struct Mecanum {

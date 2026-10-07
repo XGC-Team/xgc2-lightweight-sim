@@ -55,7 +55,8 @@ Config parse_entity(const Json &j) {
         throw std::invalid_argument("invalid FCU parameter: " + i.key());
   }
   const auto ros = j.value("ros", Json::object());
-  for (const char *key : {"provider_service", "truth_topic", "reset_service"})
+  for (const char *key : {"provider_service", "truth_topic", "reset_service",
+                          "mocap_topic", "mocap_velocity_topic"})
     if (ros.contains(key))
       throw std::invalid_argument("unsupported ROS configuration: " + std::string(key));
   if (c.kind != Kind::FS150)

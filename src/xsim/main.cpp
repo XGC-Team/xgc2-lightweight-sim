@@ -37,9 +37,10 @@ int main(int argc, char **argv) {
     signal(SIGINT, signal_stop);
     signal(SIGTERM, signal_stop);
     xsim::World world(config.at("epoch_ns").get<int64_t>(),
-                     config.value("model_step_ns", int64_t(1000000)),
-                     config.value("output_period_ns", int64_t(10000000)),
-                     config.value("catchup_batch", 8u));
+                     config.value("model_step_ns", int64_t(2000000)),
+                     config.value("output_period_ns", int64_t(8000000)),
+                     config.value("catchup_batch", 8u),
+                     config.value("max_model_step_ns", int64_t(10000000)));
     xsim::Sensors sensors(config.value("scene", xsim::Json::object()),
                           config.value("sensor_workers", 2u));
     xsim::RuntimeIO io;

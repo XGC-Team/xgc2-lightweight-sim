@@ -31,13 +31,15 @@ enum class FlightEvent { None, OffboardLost, Landed };
 class FlightModel {
 public:
   static constexpr double kLandedHeight = 0.01;
-  static constexpr double kMaxControlStep = 0.001;
+  static constexpr double kMaxStep = 0.02;
 
   explicit FlightModel(const Eigen::Vector3d &position, double yaw = 0.0,
                        const FlightControllerParameters &parameters = {},
                        double world_ground_z = 0.0)
       : body_(position, yaw), controller_(body_.parameters(), parameters),
-        ground_z_(world_ground_z), initial_position_(position), initial_yaw_(yaw) {
+        ground_z_(world_ground_z), initial_position_(position), initial_yaw_(yaw),
+        land_speed_(parameters.get("MPC_LAND_SPEED")),
+        offboard_loss_time_(parameters.get("COM_OF_LOSS_T")) {
     if (!std::isfinite(world_ground_z))
       throw std::invalid_argument("flight model: invalid world ground");
     constrain_ground(0.0);
@@ -122,86 +124,80 @@ public:
   // FCU control/integrals/stream hysteresis or changing armed/mode state.
   // Next world-thread start reconstructs this slot via resetToInitial().
   void stepPhysicsOnly(double dt) {
-    if (!std::isfinite(dt) || dt < 0.0 ||
-        dt / kMaxControlStep > std::numeric_limits<int>::max())
-      throw std::invalid_argument("flight model: invalid physics dt");
+    validate_dt(dt);
     if (dt == 0.0)
       return;
     const double yaw_before = yaw();
-    const int count = static_cast<int>(std::ceil(dt / kMaxControlStep));
-    const double h = dt / count;
-    for (int i = 0; i != count; ++i) {
-      body_.step(control_output_.allocation.target_rotor_speed, h);
-      constrain_ground(h);
-      }
+    body_.step(control_output_.allocation.target_rotor_speed, dt);
+    constrain_ground(dt);
     yaw_rate_ = xgc2_math::normalizeAngle(yaw() - yaw_before) / dt;
   }
 
+  // One control update consumes the caller's complete elapsed interval.
+  // The rigid-body plant alone subdivides for numerical integration safety.
   FlightEvent step(double dt) {
-    if (!std::isfinite(dt) || dt < 0.0 ||
-        dt / kMaxControlStep > std::numeric_limits<int>::max())
-      throw std::invalid_argument("flight model: invalid dt");
+    validate_dt(dt);
     if (dt == 0.0)
       return FlightEvent::None;
     FlightEvent event = FlightEvent::None;
     const double yaw_before = yaw();
-    const int count = static_cast<int>(std::ceil(dt / kMaxControlStep));
-    const double h = dt / count;
-    for (int i = 0; i != count; ++i) {
-      // Commander v1.12.3 sets the true->false offboard-available hysteresis
-      // directly to COM_OF_LOSS_T. Valid first input becomes available at once;
-      // there is no one-second warmup or a second invented stream timeout.
-      update_stream(h);
-      if (mode_ == FlightMode::Offboard && !offboard_available_) {
-        mode_ = FlightMode::Hold;
-        event = FlightEvent::OffboardLost;
-      }
-      const auto feedback = current_feedback();
-      if (!armed_) {
-        control_output_ = controller_.disarmed(h);
-      } else if (mode_ == FlightMode::Hold && landed()) {
-        // Keep armed idle while waiting on the initial ground for a command.
-        // This is the narrow service facade's ground gate, not a simulated
-        // Commander/Takeoff state machine. Attitude and rate functions remain
-        // the fixed source functions; no physical attitude is reset.
-        control_output_ = controller_.command_attitude(
-            feedback, orientation(), 0.0, Eigen::Vector3d::Zero(), 7, h, true);
-      } else if (mode_ == FlightMode::Offboard && attitude_control_) {
-        const auto &raw = attitude_setpoint_;
-        if (raw.type_mask == 128) {
-          control_output_ = controller_.command_rate(feedback, raw.body_rate,
-                                                     raw.thrust, h, landed());
-          control_output_.desired_orientation = raw.q; // ignored target payload
-        } else {
-          control_output_ = controller_.command_attitude(
-              feedback, raw.q, raw.thrust, raw.body_rate, raw.type_mask, h, landed());
-        }
+    // Commander v1.12.3 sets the true->false offboard-available hysteresis
+    // directly to COM_OF_LOSS_T. Valid first input becomes available at once;
+    // there is no one-second warmup or a second invented stream timeout.
+    update_stream(dt);
+    if (mode_ == FlightMode::Offboard && !offboard_available_) {
+      mode_ = FlightMode::Hold;
+      event = FlightEvent::OffboardLost;
+    }
+    const auto feedback = current_feedback();
+    if (!armed_) {
+      control_output_ = controller_.disarmed(dt);
+    } else if (mode_ == FlightMode::Hold && landed()) {
+      // Keep armed idle while waiting on the initial ground for a command.
+      // This is the narrow service facade's ground gate, not a simulated
+      // Commander/Takeoff state machine. Attitude and rate functions remain
+      // the fixed source functions; no physical attitude is reset.
+      control_output_ = controller_.command_attitude(
+          feedback, orientation(), 0.0, Eigen::Vector3d::Zero(), 7, dt, true);
+    } else if (mode_ == FlightMode::Offboard && attitude_control_) {
+      const auto &raw = attitude_setpoint_;
+      if (raw.type_mask == 128) {
+        control_output_ = controller_.command_rate(feedback, raw.body_rate,
+                                                   raw.thrust, dt, landed());
+        control_output_.desired_orientation = raw.q; // ignored target payload
       } else {
-        MaskedPva command;
-        if (mode_ == FlightMode::Offboard) {
-          command = setpoint_;
-        } else {
-          command.velocity.setZero();
-          if (mode_ == FlightMode::Land)
-            command.velocity.z() = -parameters().get("MPC_LAND_SPEED");
-        }
-        control_output_ = controller_.command_pva(feedback, command, h,
-                                                  landed(), mode_ == FlightMode::Land);
+        control_output_ = controller_.command_attitude(
+            feedback, raw.q, raw.thrust, raw.body_rate, raw.type_mask, dt, landed());
       }
-      body_.step(control_output_.allocation.target_rotor_speed, h);
-      if (constrain_ground(h)) {
-        if (armed_ && mode_ == FlightMode::Land) {
-          armed_ = false;
-          controller_.reset();
-          event = FlightEvent::Landed;
-        }
+    } else {
+      MaskedPva command;
+      if (mode_ == FlightMode::Offboard) {
+        command = setpoint_;
+      } else {
+        command.velocity.setZero();
+        if (mode_ == FlightMode::Land)
+          command.velocity.z() = -land_speed_;
       }
+      control_output_ = controller_.command_pva(feedback, command, dt,
+                                                landed(), mode_ == FlightMode::Land);
+    }
+    body_.step(control_output_.allocation.target_rotor_speed, dt);
+    if (constrain_ground(dt)) {
+      if (armed_ && mode_ == FlightMode::Land) {
+        armed_ = false;
+        controller_.reset();
+        event = FlightEvent::Landed;
       }
+    }
     yaw_rate_ = xgc2_math::normalizeAngle(yaw() - yaw_before) / dt;
     return event;
   }
 
 private:
+  static void validate_dt(double dt) {
+    if (!std::isfinite(dt) || dt < 0.0 || dt > kMaxStep)
+      throw std::invalid_argument("flight model: dt must be in [0,.02]");
+  }
   bool constrain_ground(double dt) {
     const Eigen::Vector3d omega_before = body_.state().angular_velocity;
     const auto result = resolveFlatGroundContact(body_, ground_z_, dt);
@@ -232,7 +228,7 @@ private:
         loss_pending_ = true;
         loss_age_ = 0.0;
       }
-      if (loss_age_ >= parameters().get("COM_OF_LOSS_T") - 1e-9)
+      if (loss_age_ >= offboard_loss_time_ - 1e-9)
         offboard_available_ = false;
       loss_age_ += dt;
     }
@@ -243,6 +239,7 @@ private:
   double ground_z_;
   Eigen::Vector3d initial_position_;
   double initial_yaw_;
+  double land_speed_, offboard_loss_time_;
   MaskedPva setpoint_;
   FlightAttitudeSetpoint attitude_setpoint_;
   FlightControlOutput control_output_;
@@ -283,10 +280,17 @@ public:
   }
   void advance(double end) {
     const double dt = end - response_.time();
+    const auto before = response_.velocity();
     const auto middle = response_.advance(response_.time() + 0.5 * dt);
     set_pose(xgc2_math::stepBodyVelocity(pose(), {middle.linear_m_s, 0.0},
                                         middle.yaw_rad_s, dt));
-    response_.advance(end);
+    const auto after = response_.advance(end);
+    if (dt > 0.0) {
+      // The acceleration is from the realised actuator response, not its
+      // command. The body frame turns as well as changing forward speed.
+      acceleration_body_ = {(after.linear_m_s - before.linear_m_s) / dt,
+                            after.yaw_rad_s * after.linear_m_s};
+    }
   }
   xgc2_math::Pose2 pose() const { return columns_ ? columns_->get(index_) : *local_pose_; }
   void set_pose(xgc2_math::Pose2 p) { if(columns_) columns_->set(index_,p); else local_pose_=p; }
@@ -295,12 +299,16 @@ public:
   }
   void rebind(size_t i) { index_=i; }
   xgc2_math::PlanarVelocity velocity() const { return response_.velocity(); }
+  Eigen::Vector3d specific_force_body() const {
+    return {acceleration_body_.x(), acceleration_body_.y(), 9.8066};
+  }
 
 private:
   std::optional<xgc2_math::Pose2> local_pose_;
   PlanarColumns *columns_{nullptr};
   size_t index_{0};
   xgc2_math::DelayedPlanarVelocity response_;
+  Eigen::Vector2d acceleration_body_{Eigen::Vector2d::Zero()};
 };
 
 class MecanumModel {
@@ -315,6 +323,18 @@ public:
   }
   void step(double dt) {
     set_pose(xgc2_math::stepBodyVelocity(pose(), body_velocity_, yaw_rate_, dt));
+    if (dt > 0.0) {
+      // Direct velocity actuation has an ideal jump on command changes. Its
+      // finite-step acceleration uses the actual integration interval; a
+      // constant body velocity also produces centripetal acceleration.
+      acceleration_body_ = (body_velocity_ - integrated_body_velocity_) / dt +
+          Eigen::Vector2d(-yaw_rate_ * body_velocity_.y(),
+                           yaw_rate_ * body_velocity_.x());
+      integrated_body_velocity_ = body_velocity_;
+    }
+  }
+  Eigen::Vector3d specific_force_body() const {
+    return {acceleration_body_.x(), acceleration_body_.y(), 9.8066};
   }
   xgc2_math::Pose2 pose() const { return columns_ ? columns_->get(index_) : *local_pose_; }
   void set_pose(xgc2_math::Pose2 p) { if(columns_) columns_->set(index_,p); else local_pose_=p; }
@@ -330,6 +350,8 @@ private:
   PlanarColumns *columns_{nullptr};
   size_t index_{0};
   Eigen::Vector2d body_velocity_{Eigen::Vector2d::Zero()};
+  Eigen::Vector2d integrated_body_velocity_{Eigen::Vector2d::Zero()};
+  Eigen::Vector2d acceleration_body_{Eigen::Vector2d::Zero()};
   double yaw_rate_{0.0};
 };
 

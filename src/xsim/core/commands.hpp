@@ -38,6 +38,7 @@ struct Command {
   std::string mode;
   uint64_t steps = 1;
   int64_t at = 0;
+  int64_t arrival_ns = 0; // realtime arrival guard; not a coalescing/event key
   Eigen::Vector3d velocity{Eigen::Vector3d::Zero()}; // forward,left,yaw rate
   xgc_position_target_v1 pva{};
   FlightAttitudeSetpoint attitude;

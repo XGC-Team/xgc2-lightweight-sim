@@ -38,10 +38,14 @@ def assert_retired_ros_surfaces_absent(system_state, bodies, ground_bodies):
                    name.startswith('/xgc/lightweight/providers/') for name in service_names), service_names
     for body in bodies:
         for suffix in ('/pose', '/twist'):
-            assert '/xsim' not in published.get('/' + body + suffix, set()), published
-    return {'retired_topics_checked': sorted(retired_topics),
+            assert published.get('/' + body + suffix) == {'/xsim'}, published
+    vrpn_topics = {'/vrpn_client_node/' + body + suffix for body in bodies
+                   for suffix in ('/pose', '/twist', '/accel')}
+    assert not topics & vrpn_topics, sorted(topics & vrpn_topics)
+    assert not any('/mavros/vision_' in name for name in topics), topics
+    return {'retired_topics_checked': sorted(retired_topics | vrpn_topics),
             'retired_services_checked': sorted(retired_services),
-            'xsim_canonical_publishers': 0}
+            'xsim_canonical_publishers': 2 * len(bodies)}
 
 
 class NativeProvider:

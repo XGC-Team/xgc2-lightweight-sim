@@ -24,7 +24,7 @@ affinity=()
 if [[ -n "${XSIM_TEST_CPUSET:-}" ]]; then affinity=(--cpuset-cpus "$XSIM_TEST_CPUSET"); fi
 docker run -d --rm --name "$name" --network none --cpus 2 --memory 5g --pids-limit 256 \
   "${affinity[@]}" --entrypoint sleep -v "$products:/source:ro" -v "$output:/work" "$image" infinity > "$output/container-id.txt"
-docker exec "$name" bash -s > "$output/validation.log" 2>&1 <<'INNER'
+docker exec -i "$name" bash -s > "$output/validation.log" 2>&1 <<'INNER'
 set -euo pipefail
 source /opt/ros/noetic/setup.bash
 sim=/source/ros1/simulator/xsim
@@ -40,7 +40,7 @@ cmake -S "$sim/src/xsim" -B /work/xsim \
   -DXSIM_ROS=ON -DXSIM_TESTS=ON -DPYTHON_EXECUTABLE=/usr/bin/python3 \
   -DXSIM_BASELINE_SOURCE=/work/src/xgc2_lightweight_sim \
   -DXSIM_BASELINE_SDK=/source/common/sync-runtime \
-  -DXSIM_ADAPTER_SOURCE=/source/ros1/communication/ros1-adapter -DXSIM_PRIVATE_ROS_TESTS=ON
+  -DXSIM_PRIVATE_ROS_TESTS=ON
 cmake --build /work/xsim -j1
 cmake --install /work/xsim
 cd /work/xsim

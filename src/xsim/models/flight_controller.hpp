@@ -261,6 +261,10 @@ public:
   explicit FlightController(const RigidBodyParameters &plant,
                             const FlightControllerParameters &parameters = {})
       : plant_(plant), parameters_(parameters),
+        tilt_air_(parameters.get("MPC_TILTMAX_AIR")),
+        tilt_land_(parameters.get("MPC_TILTMAX_LND")),
+        motor_slew_max_(parameters.get("MOT_SLEW_MAX")),
+        thrust_model_factor_(parameters.get("THR_MDL_FAC")),
         controls_(std::make_unique<std::array<float, 4>>()),
         mixer_(std::make_unique<MultirotorMixer>(&control_callback,
             reinterpret_cast<uintptr_t>(controls_.get()), rotors().data(), 4)) {
@@ -323,8 +327,7 @@ public:
     states.acceleration = Px4Frame::world(feedback.acceleration);
     states.yaw = matrix::Eulerf(q).psi();
     position_.setState(states);
-    position_.setTiltLimit(Px4Frame::radians(parameters_.get(
-        landing ? "MPC_TILTMAX_LND" : "MPC_TILTMAX_AIR")));
+    position_.setTiltLimit(Px4Frame::radians(landing ? tilt_land_ : tilt_air_));
     position_.setInputSetpoint(Px4Frame::setpoint(setpoint));
     const bool valid = position_.update(static_cast<float>(dt));
     if (!valid) {
@@ -415,7 +418,7 @@ public:
   Eigen::Vector4d normalized_controls_for_wrench(const Eigen::Vector4d &wrench) const {
     const auto force = physical_matrix_.fullPivLu().solve(wrench).eval();
     Eigen::Vector4d thrust_model;
-    const double alpha = parameters_.get("THR_MDL_FAC");
+    const double alpha = thrust_model_factor_;
     for (int i = 0; i != 4; ++i) {
       const auto &channel = fs150_native_asset::rotors[i];
       const double motor = (std::sqrt(force[i] / plant_.thrust_coefficient) -
@@ -446,7 +449,7 @@ private:
   RotorAllocation mix(const matrix::Vector3f &torque, double thrust,
                       double dt, bool armed) {
     *controls_ = {torque(0), torque(1), torque(2), static_cast<float>(thrust)};
-    const float slew = parameters_.get("MOT_SLEW_MAX");
+    const float slew = motor_slew_max_;
     mixer_->set_max_delta_out_once(slew > 0.f ? 2.f * static_cast<float>(dt) / slew : 0.f);
     float outputs[4]{};
     if (mixer_->mix(outputs, 4) != 4)
@@ -481,7 +484,7 @@ private:
         torque(i) = 0.f;
     result.normalized_torque_frd = {torque(0), torque(1), torque(2)};
     result.allocation = mix(torque, thrust, dt, true);
-    const double alpha = parameters_.get("THR_MDL_FAC");
+    const double alpha = thrust_model_factor_;
     for (int i = 0; i != 4; ++i) {
       const double m = result.allocation.motor_commands[i];
       result.allocated_normalized_thrust += ((1.0 - alpha) * m + alpha * m * m) / 4.0;
@@ -490,10 +493,12 @@ private:
 
   RigidBodyParameters plant_;
   FlightControllerParameters parameters_;
+  // Parameters are immutable after construction; reset/move retains the values.
+  float tilt_air_, tilt_land_, motor_slew_max_, thrust_model_factor_;
   AttitudeControl attitude_;
   RateControl rate_;
   PositionControl position_;
-  // The mixer callback storage stays stable when the Host vector moves models.
+  // The mixer callback storage stays stable when World moves dense models.
   std::unique_ptr<std::array<float, 4>> controls_;
   std::unique_ptr<MultirotorMixer> mixer_;
   MultirotorMixer::saturation_status saturation_{};

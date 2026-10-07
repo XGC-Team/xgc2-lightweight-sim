@@ -8,4 +8,4 @@
 
 Configure `XSIM_ROS=OFF` for the headless native server and model/world/native
 checks; `ON` enables the original ROS boundary. The build/install and public
-contracts are in the [owning README](../../README.md).
+contracts are in the [configuration and interface reference](../../docs/reference.md).

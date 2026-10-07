@@ -11,7 +11,6 @@ def main():
     parser.add_argument('--xsim', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--replays', required=True)
-    parser.add_argument('--canonical-fixture', required=True)
     parser.add_argument('--slow-service-test', required=True)
     args = parser.parse_args()
     out = Path(args.output)
@@ -49,10 +48,11 @@ def main():
         from sensor_msgs.msg import Imu, PointCloud2
         rospy.set_param('/use_sim_time', True)
         rospy.init_node('xsim_private_contract', disable_signals=True)
-        canonical = spawn([args.canonical_fixture], 'canonical-fixture.log')
         epoch = 1700000000000000000
         instance = 'xsim-private-contract'
-        config = {'instance_id':instance, 'epoch_ns':epoch, 'paused':True, 'publish_clock':True,
+        config = {'instance_id':instance, 'epoch_ns':epoch, 'model_step_ns':1000000, 'output_period_ns':10000000,
+                  'telemetry_rates_hz':{key:100 for key in ('localization','local','imu','imu_raw','state','extended_state','target')},
+                  'paused':True, 'publish_clock':True,
                   'scene':{'obstacles':[{'type':'box','position':[5,0,0], 'size':[1,6,4]}]},
                   'entities':[{'name':kind, 'kind':kind, 'position':[2,-1,0], 'yaw':.35,
                                'ros':{'mocap_noise':[0,0,0],'mocap_seed':1},
@@ -91,9 +91,7 @@ def main():
             subscriptions.append(rospy.Subscriber(topic,typ,record,queue_size=1000))
         for kind in ('fs150','scout','mecanum'):
             base='/'+kind
-            subscribe(kind+'.canonical',base+'/pose',PoseStamped)
-            subscribe(kind+'.canonical_twist',base+'/twist',TwistStamped)
-            subscribe(kind+'.mocap','/vrpn_client_node'+base+'/pose',PoseStamped)
+            subscribe(kind+'.mocap',base+'/pose',PoseStamped)
             if kind=='fs150':
                 subscribe(kind+'.pose',base+'/mavros/local_position/pose',PoseStamped)
                 subscribe(kind+'.velocity',base+'/mavros/local_position/velocity_local',TwistStamped)
@@ -104,12 +102,10 @@ def main():
         subscribe('fs150.cloud','/fs150/cloud',PointCloud2)
         subscribe('fs150.raw_imu','/fs150/mavros/imu/data_raw',Imu)
         for kind in ('fs150','scout','mecanum'):
-            subscribe(kind+'.mocap_velocity','/vrpn_client_node/'+kind+'/twist',TwistStamped)
-        # Wait for both legs of the original Adapter projection fixture.
-        # A paused world emits a stamp once; elapsed sleep is not a TCPROS
-        # connection acknowledgement and can lose the first checkpoint.
-        from std_msgs.msg import Bool
-        assert rospy.wait_for_message('/xsim_private/canonical_ready',Bool,timeout=8).data
+            subscribe(kind+'.mocap_velocity','/'+kind+'/twist',TwistStamped)
+        # A paused world emits a stamp once; wait for real TCPROS connections.
+        until(lambda: all(sub.get_num_connections() > 0 for sub in subscriptions),
+              'direct canonical and FCU connections')
         providers={}
         for kind in ('fs150','scout','mecanum'):
             providers[kind]=NativeProvider(sock,kind)
@@ -141,7 +137,7 @@ def main():
                         {'request_id':'provider-negative-generation','generation':-1}):
             code,result=http('POST',provider_path,{**retry_payload,**invalid});assert code==400,(code,result)
         code,result=http('DELETE',provider_path,{**retry_payload,'request_id':'provider-wrong-method'})
-        assert code==404,(code,result)
+        assert code==405,(code,result)
         state=providers['fs150'].read();assert state['enabled'] and state['generation']==1,state
         def sample(key):
             with state_lock:return latest.get(key)
@@ -154,7 +150,7 @@ def main():
             publishers={name:set(nodes) for name,nodes in state[0]}
             for kind in providers:
                 for suffix in ('/pose','/twist'):
-                    assert publishers.get('/'+kind+suffix)=={'/xsim_canonical_fixture'},publishers
+                    assert publishers.get('/'+kind+suffix)=={'/xsim'},publishers
             return checked
         stamp=step(10)
         for kind in providers:
@@ -166,13 +162,6 @@ def main():
         assert abs(measurement.pose.position.x-2)<1e-12 and abs(measurement.pose.position.y+1)<1e-12
         assert measurement.header.frame_id=='world' and p.header.stamp.to_nsec()==epoch+10_000_000
         assert sample('fs150.imu').header.frame_id=='base_link'
-        for kind in ('fs150','scout','mecanum'):
-            until(lambda: sample(kind+'.canonical') and sample(kind+'.canonical').header.stamp.to_nsec()==stamp, kind+' original Adapter projection')
-            source=sample(kind+'.mocap'); projected=sample(kind+'.canonical')
-            assert abs(projected.pose.position.x-source.pose.position.x-.4)<1e-12
-            assert abs(projected.pose.position.y-source.pose.position.y+.2)<1e-12
-            assert abs(projected.pose.position.z-source.pose.position.z-.3)<1e-12
-            assert projected.header.frame_id==source.header.frame_id=='world'
         graph_report=ros_graph()
         assert p.header.frame_id=='map'
         until(lambda: sample('fs150.raw_imu'), 'raw IMU')
@@ -204,7 +193,7 @@ def main():
         until(lambda: sample('fs150.cloud') and sample('fs150.cloud').width>0,'real CPU point cloud')
         cloud=sample('fs150.cloud');assert epoch<cloud.header.stamp.to_nsec()<=stamp
         fs_report={'nonzero_world_position':[measurement.pose.position.x,measurement.pose.position.y,measurement.pose.position.z],
-                   'world_measurement_topic':'/vrpn_client_node/fs150/pose','mocap_noise_std':[0,0,0],
+                   'world_measurement_topic':'/fs150/pose','mocap_noise_std':[0,0,0],
                    'initial_local_position':[0,0,0], 'initial_stamp_ns':epoch+10_000_000,
                    'flight_position':[flight.pose.position.x,flight.pose.position.y,flight.pose.position.z],
                    'target_thrust':sample('fs150.target').thrust,'arm_ground_result':0,'airborne_disarm_result':r.result,
@@ -241,21 +230,13 @@ def main():
                 m=Twist();m.linear.x,m.linear.y,m.angular.z=u;pub.publish(m)
             time.sleep(.03);stamp=step(1000)
             for k in pubs:
-                until(lambda: all(sample(k+suffix) and sample(k+suffix).header.stamp.to_nsec()==stamp for suffix in ('.mocap','.mocap_velocity','.canonical','.canonical_twist')),k+' matched measurement checkpoint')
+                until(lambda: all(sample(k+suffix) and sample(k+suffix).header.stamp.to_nsec()==stamp for suffix in ('.mocap','.mocap_velocity')),k+' matched measurement checkpoint')
                 p=sample(k+'.mocap').pose.position;v=sample(k+'.mocap_velocity').twist.linear
                 actual=[p.x,p.y,p.z,v.x,v.y,v.z]
                 ref=references[k]['checkpoints'][idx];expected=ref['position']+ref['velocity']
                 error=max(abs(a-b) for a,b in zip(actual,expected));max_error[k]=max(max_error[k],error)
                 assert error<1e-9,(k,idx,error,actual,expected)
-                raw=sample(k+'.mocap');projected=sample(k+'.canonical')
-                assert raw.header.frame_id==projected.header.frame_id=='world'
-                for axis,offset in zip(('x','y','z'),(.4,-.2,.3)):
-                    assert abs(getattr(projected.pose.position,axis)-getattr(raw.pose.position,axis)-offset)<1e-12
-                raw_twist=sample(k+'.mocap_velocity');projected_twist=sample(k+'.canonical_twist')
-                assert raw_twist.header.frame_id==projected_twist.header.frame_id=='world'
-                for part in ('linear','angular'):
-                    for axis in ('x','y','z'):
-                        assert abs(getattr(getattr(projected_twist.twist,part),axis)-getattr(getattr(raw_twist.twist,part),axis))<1e-12
+                assert sample(k+'.mocap').header.frame_id == sample(k+'.mocap_velocity').header.frame_id == 'world'
                 ground_samples[k].append({'step':(idx+1)*1000,'stamp_ns':stamp,'position':actual[:3],'velocity':actual[3:]})
         for k in pubs:
             before=providers[k].read()['generation']
@@ -269,7 +250,7 @@ def main():
             reports[k]={'max_abs_pose_velocity_error':max_error[k],'tolerance':1e-9,'checkpoints':ground_samples[k],
                         'provider_initial_generation':1,'reset_generation':after,'stale_provider_reason':stale['reason'],
                         'reset_position':[p.x,p.y,p.z],'world_frame':'world',
-                        'measurement_topics':['/vrpn_client_node/'+k+'/pose','/vrpn_client_node/'+k+'/twist'],
+                        'measurement_topics':['/'+k+'/pose','/'+k+'/twist'],
                         'mocap_noise_std':[0,0,0]}
         graph_report=ros_graph()
         # Failed preparation must never commit an entity or silently select CPU.
@@ -288,9 +269,8 @@ def main():
         prior=get('/status')['steps'];mutation('/resume');time.sleep(.25);assert get('/status')['steps']>prior;mutation('/pause');slow.close()
         for kind,report in reports.items():
             report.update(result='PASS',baseline='fed3fdc3d6625d9020d363bb5b9c3c8f8f2c72a6',
-                scope='Private ROS source/MAVROS/UGV contract plus original unchanged Adapter localization_projection.cpp in private ROS fixture. Full supervised production Adapter lifecycle not executed.',
-                canonical_projection_offset=[.4,-.2,.3], canonical_projection_max_error_below=1e-12,
-                adapter_modified=False, ros_graph=graph_report)
+                scope='Private ROS direct canonical/MAVROS/UGV contract. Full supervised production Adapter lifecycle not executed.',
+                direct_canonical=True, ros_graph=graph_report)
             (out/(kind+'-ros.json')).write_text(json.dumps(report,indent=2)+'\n')
         # One small expansion fixture, same code/config shape at 20 and 100.
         for e in get('/entities')['entities']:
@@ -310,7 +290,7 @@ def main():
                 if line.startswith(('Threads:','VmRSS:','VmHWM:')):
                     key,val=line.split(':',1);proc[key]=val.strip()
             scale={'entities':count,'elapsed_wall_s':elapsed,'completed_steps':end['steps']-initial['steps'],
-                   'interval_rtf':(end['steps']-initial['steps'])*.001/elapsed,'process':proc,'status':end}
+                   'interval_rtf':(end['simulation_time_ns']-initial['simulation_time_ns'])*1e-9/elapsed,'process':proc,'status':end}
             assert scale['completed_steps']>0
             scales.append(scale)
             for e in get('/entities')['entities']:mutation('/entities/'+str(e['id']),{'generation':e['generation']},'DELETE')

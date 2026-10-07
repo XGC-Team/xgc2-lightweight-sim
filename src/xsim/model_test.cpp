@@ -1,4 +1,5 @@
 #include "vehicle_model.hpp"
+#include "systems/robots.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -30,6 +31,15 @@ void fly(FlightModel &model, const MaskedPva &target, int steps, double dt = 0.0
     assert(model.step(dt) == FlightEvent::None);
   }
 }
+// Long scenarios explicitly schedule their model calls; FlightModel does not.
+void advance_ms(FlightModel &model, int milliseconds, bool physics_only = false) {
+  for (int i = 0; i != milliseconds; ++i) {
+    if (physics_only)
+      model.stepPhysicsOnly(0.001);
+    else
+      model.step(0.001);
+  }
+}
 void fly_raw(FlightModel &model, const FlightAttitudeSetpoint &target, int steps) {
   for (int i = 0; i != steps; ++i) {
     assert(model.attitude_setpoint(target));
@@ -39,7 +49,7 @@ void fly_raw(FlightModel &model, const FlightAttitudeSetpoint &target, int steps
 }
 
 int main() {
-  // Existing Host vectors may move their models: mixer callback storage and
+  // World dense vectors may move their models: mixer callback storage and
   // original integral/motor histories must remain attached to each instance.
   std::vector<FlightModel> models;
   models.reserve(1);
@@ -48,12 +58,12 @@ int main() {
   auto &model = models[0];
   auto hover = position_setpoint({0.6, -0.4, 2.15});
   assert(model.setpoint(hover));
-  model.step(0.1);
+  advance_ms(model, 100);
   assert((model.state().position - Eigen::Vector3d(0, 0, 0.15)).norm() == 0.0);
   assert(model.angular_velocity_body().norm() == 0.0);
   assert((model.specific_force_body() - Eigen::Vector3d(0, 0, 9.8066)).norm() < 1e-6);
   assert(model.request_arm(true));
-  model.step(0.3); // armed hold on initial ground is idle, not a takeoff command
+  advance_ms(model, 300); // armed hold on initial ground is idle, not a takeoff command
   assert(std::abs(model.state().position.z() - 0.15) < 1e-12);
   assert(model.control_output().normalized_thrust == 0.0);
   assert(model.setpoint(hover));
@@ -102,7 +112,7 @@ int main() {
   assert(impact > 100.0);
   assert(std::abs(model.state().position.z() - 0.15) < 1e-12);
   assert(model.state().velocity.z() >= -1e-12);
-  model.step(0.1);
+  advance_ms(model, 100);
   assert(std::abs(model.state().position.z() - 0.15) < 1e-12);
 
   // Decoder reception and PositionControl admissibility are independent.
@@ -230,7 +240,7 @@ int main() {
   raw.type_mask = 128; raw.thrust = hover_motor;
   assert(refused.attitude_setpoint(raw));
   assert(refused.request_arm(true) && refused.request_mode(FlightMode::Offboard));
-  assert(refused.step(0.049) == FlightEvent::None);
+  advance_ms(refused, 49);
   for (const uint32_t mask : {1u, 2u, 3u, 4u, 5u, 6u, 64u, 135u, 255u}) {
     auto bad = raw; bad.type_mask = mask; bad.thrust = 1.0;
     assert(!refused.attitude_setpoint(bad));
@@ -254,7 +264,7 @@ int main() {
   assert(!airborne.landed());
   assert(std::abs(airborne.acceleration().z() + physical.gravity) < 1e-12);
   assert(airborne.specific_force_body().norm() < 1e-12);
-  airborne.step(0.1);
+  advance_ms(airborne, 100);
   assert(airborne.state().position.z() < 2.0 && airborne.state().position.z() > 1.9);
   airborne = FlightModel({0.4, 0.5, 1.0}, -0.4, calibrated, 0.0);
   assert(!airborne.armed() && airborne.mode() == FlightMode::Hold);
@@ -269,7 +279,7 @@ int main() {
   fly_raw(stopped_slot, retained, 1);
   const auto target_before_stop = stopped_slot.control_output();
   const auto pose_before_stop = stopped_slot.state().position;
-  stopped_slot.stepPhysicsOnly(0.1);
+  advance_ms(stopped_slot, 100, true);
   assert(stopped_slot.armed() && stopped_slot.mode() == FlightMode::Offboard);
   assert((stopped_slot.control_output().allocation.target_rotor_speed -
           target_before_stop.allocation.target_rotor_speed).norm() == 0.0);
@@ -283,7 +293,7 @@ int main() {
   assert(airborne.state().velocity.norm() == 0.0);
   assert(airborne.angular_velocity_body().norm() == 0.0);
   assert(airborne.control_output().allocation.target_rotor_speed.norm() == 0.0);
-  airborne.step(0.6);
+  advance_ms(airborne, 600);
   assert(std::abs(airborne.state().position.z()) < 1e-12);
   assert(airborne.landed() && airborne.acceleration().norm() < 1e-8);
   const auto new_target = position_setpoint({0.4, 0.5, 1.0});
@@ -295,6 +305,70 @@ int main() {
   assert((airborne.state().position - Eigen::Vector3d(0.4, 0.5, 1.0)).norm() < 1e-12);
   assert(airborne.state().velocity.norm() == 0.0);
   assert(!airborne.request_mode(FlightMode::Offboard));
+
+  // Shared elapsed dt reaches the FCU once, including an overload interval.
+  // Compare its public output with one direct controller update and the pure
+  // plant; an implicit 1 ms control loop would consume intermediate feedback.
+  FlightModel elapsed_model({0, 0, 1}, 0, calibrated);
+  FlightAttitudeSetpoint elapsed_raw;
+  elapsed_raw.body_rate = {0.3, -0.2, 0.1};
+  elapsed_raw.thrust = hover_motor;
+  assert(elapsed_model.attitude_setpoint(elapsed_raw));
+  assert(elapsed_model.request_arm(true));
+  assert(elapsed_model.request_mode(FlightMode::Offboard));
+  FlightController direct_controller(physical, calibrated);
+  const FlightFeedback initial_feedback{elapsed_model.state().position,
+      elapsed_model.state().velocity, elapsed_model.acceleration(),
+      elapsed_model.orientation(), elapsed_model.angular_velocity_body(),
+      Eigen::Vector3d::Zero()};
+  const auto direct = direct_controller.command_rate(initial_feedback,
+      elapsed_raw.body_rate, elapsed_raw.thrust, 0.01, false);
+  RigidBodyModel direct_body({0, 0, 1}, 0, physical);
+  direct_body.step(direct.allocation.target_rotor_speed, 0.01);
+  assert(elapsed_model.step(0.01) == FlightEvent::None);
+  assert((elapsed_model.control_output().allocation.target_rotor_speed -
+          direct.allocation.target_rotor_speed).norm() < 1e-12);
+  assert((elapsed_model.state().position - direct_body.base_position()).norm() < 1e-12);
+  assert(elapsed_model.orientation().angularDistance(direct_body.state().orientation) < 1e-12);
+  const auto before_invalid = elapsed_model.state();
+  for (double invalid : {-0.001, 0.020001,
+                         std::numeric_limits<double>::infinity(),
+                         std::numeric_limits<double>::quiet_NaN()}) {
+    bool rejected = false;
+    try { elapsed_model.step(invalid); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    assert(rejected);
+    assert((elapsed_model.state().position - before_invalid.position).norm() == 0);
+  }
+
+  FlightModel variable_hover({0, 0, 0});
+  const auto variable_target = position_setpoint({0.3, -0.2, 1.0});
+  take_off(variable_hover, variable_target);
+  for (int i = 0; i != 500; ++i)
+    for (const double dt : {0.002, 0.004, 0.008, 0.01}) {
+      assert(variable_hover.setpoint(variable_target));
+      assert(variable_hover.step(dt) == FlightEvent::None);
+    }
+  const double variable_error = (variable_hover.state().position - variable_target.position).norm();
+  std::cout << "variable-dt hover error " << variable_error << "\n";
+  assert(variable_error < 0.03);
+  assert(variable_hover.state().velocity.norm() < 0.03);
+
+  xsim::Config scout_config;
+  scout_config.kind = xsim::Kind::Scout;
+  xsim::Scout variable_scout(scout_config);
+  variable_scout.model.command(variable_scout.age, 1.0, 0.4);
+  for (const int64_t dt : {2000000, 6000000, 10000000})
+    xsim::step_robot(variable_scout, dt);
+  assert(variable_scout.age_ns == 18000000);
+  assert(std::abs(variable_scout.age - 0.018) < 1e-15);
+  const double response = 1.0 - std::exp(-0.013 / 0.005);
+  assert(std::abs(variable_scout.model.velocity().linear_m_s - response) < 1e-12);
+  assert(std::abs(variable_scout.model.velocity().yaw_rad_s - 0.4 * response) < 1e-12);
+  bool rejected = false;
+  try { xsim::step_robot(variable_scout, -1); }
+  catch (const std::invalid_argument &) { rejected = true; }
+  assert(rejected && variable_scout.age_ns == 18000000);
 
   ScoutModel scout({{0.0, 0.0}, 0.0});
   scout.command(0.0, 1.0, 0.0);
@@ -320,5 +394,44 @@ int main() {
   arc.command(1.0, 0.5, 1.0);
   arc.step(6.283185307179586);
   assert(arc.pose().position.norm() < 1e-12);
+
+  // IMU truth is generated at each model's actual integration interval. A
+  // resting planar body feels gravity; forward response, braking and turning
+  // must change specific force even when ROS samples it at a lower rate.
+  ScoutModel imu_scout({{0, 0}, 0.7});
+  assert((imu_scout.specific_force_body() - Eigen::Vector3d(0, 0, physical.gravity)).norm() < 1e-12);
+  imu_scout.command(0, 0.6, 0.5);
+  imu_scout.advance(.004); // delayed command has not reached the plant
+  assert(imu_scout.specific_force_body().head<2>().norm() == 0);
+  imu_scout.advance(.008); // actual 4 ms interval, 3 ms of actuator response
+  const double response_at_8ms = 1 - std::exp(-.003 / .005);
+  assert(std::abs(imu_scout.specific_force_body().x() - .6 * response_at_8ms / .004) < 1e-10);
+  assert(std::abs(imu_scout.velocity().yaw_rad_s - .5 * response_at_8ms) < 1e-12);
+  assert(std::abs(imu_scout.specific_force_body().y() - .3 * response_at_8ms * response_at_8ms) < 1e-12);
+  imu_scout.advance(.015); // next interval is 7 ms, not an assumed 2 ms
+  const double response_at_15ms = 1 - std::exp(-.01 / .005);
+  assert(std::abs(imu_scout.specific_force_body().x() - .6 * (response_at_15ms - response_at_8ms) / .007) < 1e-10);
+  imu_scout.command(.015, 0, 0);
+  imu_scout.advance(.021);
+  assert(imu_scout.specific_force_body().x() < 0);
+  imu_scout.advance(.22);
+  imu_scout.advance(.23);
+  assert(imu_scout.specific_force_body().head<2>().norm() < 1e-6);
+  assert(imu_scout.specific_force_body().z() == physical.gravity);
+
+  MecanumModel imu_mecanum({{0, 0}, -0.9});
+  assert((imu_mecanum.specific_force_body() - Eigen::Vector3d(0, 0, physical.gravity)).norm() < 1e-12);
+  imu_mecanum.command(.4, 0, .6);
+  imu_mecanum.step(.002);
+  assert(std::abs(imu_mecanum.specific_force_body().x() - 200) < 1e-12);
+  imu_mecanum.step(.01);
+  assert(std::abs(imu_mecanum.specific_force_body().x()) < 1e-12);
+  assert(std::abs(imu_mecanum.specific_force_body().y() - .24) < 1e-12);
+  assert(imu_mecanum.yaw_rate() == .6);
+  imu_mecanum.command(0, 0, 0);
+  imu_mecanum.step(.004);
+  assert(std::abs(imu_mecanum.specific_force_body().x() + 100) < 1e-12);
+  imu_mecanum.step(.006);
+  assert((imu_mecanum.specific_force_body() - Eigen::Vector3d(0, 0, physical.gravity)).norm() < 1e-12);
   std::cout << "lightweight six-DOF FCU and unchanged ground plants: passed\n";
 }

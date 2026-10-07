@@ -8,35 +8,49 @@ bool continuous(Op op) {
   return op == Op::Pva || op == Op::Attitude || op == Op::Velocity;
 }
 } // namespace
-World::World(int64_t e, int64_t d, int64_t o, unsigned c)
+World::World(int64_t e, int64_t d, int64_t o, unsigned c, int64_t maximum)
     : epoch(e), dt(d), output_period(o), time_(e), next_output_(e),
-      catchup_(c) {
+      catchup_(c), physics_clock_(d, maximum) {
   if (e <= 0 || d <= 0 || o <= 0 || d > INT64_MAX-e || !c || e > INT64_MAX - o)
     throw std::invalid_argument(
         "explicit positive session epoch, step and output period required");
   metrics.sim_ns = e;
+  metrics.scheduling_period_ns = d;
   next_output_ = epoch + output_period;
+  for (auto &frame : frame_pool_) frame = std::make_shared<Frame>();
 }
 World::~World() { stop(); }
 void World::submit(const Ticket &t) {
+  // Arrival is a not-before guard, not a separate world integration event.
+  if (continuous(t->op) && running_ && !metrics.paused) {
+    const auto wall = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          Clock::now().time_since_epoch()).count();
+    const auto offset = wall_offset_ns_.load();
+    t->arrival_ns = offset > INT64_MAX - wall ? INT64_MAX : wall + offset;
+  }
   {
     std::lock_guard<std::mutex> l(input_mutex_);
+    bool replaced = false;
     if (continuous(t->op)) {
       for (auto i = inbox_.rbegin(); i != inbox_.rend(); ++i) {
-        if (!continuous((*i)->op))
-          break; // never coalesce across an ordered discrete operation
+        if (!continuous((*i)->op)) break;
         if ((*i)->key.id == t->key.id &&
             (*i)->key.generation == t->key.generation && (*i)->op == t->op &&
             (*i)->at == t->at) {
           (*i)->phase = 3;
           *i = t;
           ++metrics.input_misses;
-          wake_.notify_one();
-          return;
+          replaced = true;
+          break;
         }
       }
     }
-    inbox_.push_back(t);
+    if (!replaced) inbox_.push_back(t);
+  }
+  // Inbox publication precedes the wake revision under the wake mutex.
+  {
+    std::lock_guard<std::mutex> l(wake_mutex_);
+    ++wake_revision_;
   }
   wake_.notify_one();
 }
@@ -88,6 +102,9 @@ Result World::apply(Command &c) {
     return r;
   }
   if (c.op == Op::Resume) {
+    if (stepping_) { r.success = false; r.reason = 2; return r; }
+    const auto wall = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count();
+    wall_offset_ns_ = time_ - wall;
     metrics.paused = false;
     return r;
   }
@@ -95,6 +112,8 @@ Result World::apply(Command &c) {
     r.success = metrics.paused && c.steps > 0 && stepping_ == 0 && c.steps<=uint64_t((INT64_MAX-time_)/dt);
     if (r.success)
       stepping_ = c.steps;
+    else
+      r.reason = 2;
     return r;
   }
   if (c.op == Op::Add) {
@@ -115,6 +134,7 @@ Result World::apply(Command &c) {
       flights_.push_back(std::get<Flight>(std::move(p.model)));
       flights_.back().model.bind(bodies_, i);
       flight_ids_.push_back(e->id);
+      flight_enabled_.push_back(0);
     } else if (e->config.kind == Kind::Scout) {
       i = scouts_.size();
       scout_poses_.append(std::get<Scout>(p.model).model.pose());
@@ -130,7 +150,8 @@ Result World::apply(Command &c) {
     }
     slots_.emplace(e->id, Slot{e, i});
     e->alive = true;
-    scratch_.states.reserve(slots_.size());
+    geometry_dirty_ = true;
+    reserve_frames();
     r.key = {e->id, e->generation};
     return r;
   }
@@ -188,13 +209,17 @@ Result World::apply(Command &c) {
       models.pop_back();
       ids.pop_back();
     };
-    if (e.config.kind == Kind::FS150)
+    if (e.config.kind == Kind::FS150) {
+      flight_enabled_[i] = flight_enabled_.back();
+      flight_enabled_.pop_back();
       erase(flights_, flight_ids_, bodies_);
+    }
     else if (e.config.kind == Kind::Scout)
       erase(scouts_, scout_ids_, scout_poses_);
     else
       erase(mecanums_, mecanum_ids_, mecanum_poses_);
     slots_.erase(found);
+    geometry_dirty_ = true;
     return r;
   }
   if (c.op == Op::Reset) {
@@ -218,6 +243,8 @@ Result World::apply(Command &c) {
       r.success = false;
       r.reason = 2;
     }
+    if (e.config.kind == Kind::FS150)
+      flight_enabled_[i] = e.enabled;
     r.key.generation = e.generation;
     r.enabled = e.enabled;
     return r;
@@ -289,6 +316,7 @@ Result World::apply(Command &c) {
   return r;
 }
 void World::boundary() {
+  const auto now = Clock::now();
   {
     std::unique_lock<std::mutex> l(input_mutex_, std::try_to_lock);
     if (l.owns_lock())
@@ -296,7 +324,7 @@ void World::boundary() {
   }
   for (auto i = commands_.begin(); i != commands_.end();) {
     auto t = *i;
-    if (t->at > time_ && continuous(t->op) && Clock::now() < t->deadline &&
+    if (std::max(t->at, t->arrival_ns) > time_ && continuous(t->op) && now < t->deadline &&
         t->phase == 0) {
       ++i;
       continue;
@@ -325,27 +353,26 @@ void World::boundary() {
       finish(t, r);
   }
 }
-void World::advance() {
+void World::advance() { advance(dt); }
+void World::advance(int64_t elapsed_ns) {
+  if (elapsed_ns < PhysicsClock::minimum_step || elapsed_ns > 20000000)
+    throw std::invalid_argument("integration duration must be 1 us..20 ms");
   const auto begin = Clock::now();
-  if(steps_>=uint64_t((INT64_MAX-epoch)/dt)) {metrics.paused=true;return;}
-  const double h = double(dt) * 1e-9;
+  if (elapsed_ns > INT64_MAX - time_) { metrics.paused = true; return; }
+  const double h = double(elapsed_ns) * 1e-9;
   for (size_t i = 0; i < flights_.size(); ++i) {
     auto &f = flights_[i];
-    auto &e = *slots_.at(flight_ids_[i]).entity;
-    step_robot(f, e.enabled, h);
+    step_robot(f, flight_enabled_[i], h);
   }
   for (auto &s : scouts_)
-    step_robot(s, dt);
+    step_robot(s, elapsed_ns);
   for (auto &m : mecanums_)
     step_robot(m, h);
   ++steps_;
-  time_ = epoch + int64_t(steps_) * dt;
+  time_ += elapsed_ns;
+  metrics.last_dt_ns = elapsed_ns;
   metrics.steps = steps_;
   metrics.sim_ns = time_;
-  if (sample_sensor)
-    for (const auto &s : slots_)
-      if (s.second.entity->sensor && s.second.entity->enabled)
-        sample_sensor(state(s.first, s.second));
   if (time_ >= next_output_) {
     emit();
     const auto next_index=(time_-epoch)/output_period+1;
@@ -395,9 +422,11 @@ State World::state(uint64_t id, const Slot &s) const {
       auto u = scouts_[i].model.velocity();
       body = {u.linear_m_s, 0};
       v.omega.z() = u.yaw_rad_s;
+      v.specific_force = scouts_[i].model.specific_force_body();
     } else {
       body = mecanums_[i].model.body_velocity();
       v.omega.z() = mecanums_[i].model.yaw_rate();
+      v.specific_force = mecanums_[i].model.specific_force_body();
     }
     v.position = {pose.position.x(), pose.position.y(), e.config.initial.z()};
     v.orientation = Eigen::AngleAxisd(pose.yaw, Eigen::Vector3d::UnitZ());
@@ -407,39 +436,105 @@ State World::state(uint64_t id, const Slot &s) const {
 }
 Frame World::capture() const {
   Frame f;
+  f.states.reserve(slots_.size());
   f.stamp = time_;
   f.steps = steps_;
+  f.revision = revision_;
+  // An ad-hoc capture has no authoritative emitted-geometry token. The legacy
+  // sensor fixture entry point computes its own exact geometry observation.
   for (const auto &s : slots_)
     f.states.push_back(state(s.first, s.second));
   return f;
 }
+void World::reserve_frames() {
+  const size_t required = slots_.size();
+  for (auto &frame : frame_pool_)
+    if (frame.unique() && frame->states.capacity() < required) {
+      // libstdc++ unique() reads its reference count relaxed. Pair the observed
+      // final consumer release with an acquire before mutating reusable storage.
+      std::atomic_thread_fence(std::memory_order_acquire);
+      frame->states.reserve(std::max(required, frame->states.capacity() * 2));
+      ++metrics.frame_array_grows;
+    }
+  if (geometry_.capacity() < required)
+    geometry_.reserve(std::max(required, geometry_.capacity() * 2));
+}
+void World::observe_geometry(Frame &frame) {
+  bool changed = geometry_dirty_ || geometry_.size() != frame.states.size();
+  if (!changed)
+    for (size_t i = 0; i < geometry_.size(); ++i) {
+      const auto &previous = geometry_[i];
+      const auto &current = frame.states[i];
+      if (previous.key.id != current.key.id ||
+          previous.key.generation != current.key.generation ||
+          previous.enabled != current.enabled ||
+          !(previous.position.array() == current.position.array()).all()) {
+        changed = true;
+        break;
+      }
+    }
+  if (changed) {
+    ++geometry_revision_;
+    geometry_.resize(frame.states.size());
+    for (size_t i = 0; i < geometry_.size(); ++i) {
+      const auto &current = frame.states[i];
+      geometry_[i] = {current.key, current.enabled, current.position};
+    }
+    geometry_dirty_ = false;
+  }
+  frame.geometry_revision = geometry_revision_;
+}
 void World::emit() {
   if (emitted_stamp_ == time_ && emitted_revision_ == revision_)
     return;
+  Frame *frame = nullptr;
+  size_t index = 0;
+  for (size_t offset = 0; offset < frame_pool_size; ++offset) {
+    index = (frame_cursor_ + offset) % frame_pool_size;
+    if (frame_pool_[index].unique()) {
+      std::atomic_thread_fence(std::memory_order_acquire);
+      frame = frame_pool_[index].get();
+      break;
+    }
+  }
+  if (!frame) {
+    ++metrics.output_misses;
+    return;
+  }
+  // A slot retained across a topology change catches up once after release.
+  // Ordinary frames only resize within previously reserved storage.
+  if (frame->states.capacity() < slots_.size()) {
+    frame->states.reserve(std::max(slots_.size(), frame->states.capacity() * 2));
+    ++metrics.frame_array_grows;
+  }
+  frame->states.resize(slots_.size());
+  size_t at = 0;
+  for (const auto &s : slots_) frame->states[at++] = state(s.first, s.second);
+  frame->stamp = time_;
+  frame->steps = steps_;
+  frame->revision = revision_;
+  observe_geometry(*frame);
   std::unique_lock<std::mutex> l(output_mutex_, std::try_to_lock);
   if (!l.owns_lock()) {
     ++metrics.output_misses;
     return;
   }
-  if (ready_available_)
-    ++metrics.output_misses;
-  ready_.states.clear();
-  ready_.states.reserve(slots_.size());
-  for (const auto &s : slots_)
-    ready_.states.push_back(state(s.first, s.second));
-  ready_.stamp = time_;
-  ready_.steps = steps_;
-  ready_.revision = revision_;
+  if (ready_) ++metrics.output_misses;
+  ready_ = frame_pool_[index];
+  frame_cursor_ = (index + 1) % frame_pool_size;
   emitted_revision_ = revision_;
   emitted_stamp_ = time_;
-  ready_available_ = true;
+}
+bool World::take_frame(std::shared_ptr<const Frame> &f) {
+  std::lock_guard<std::mutex> l(output_mutex_);
+  if (!ready_) return false;
+  f = std::move(ready_);
+  return true;
 }
 bool World::take_frame(Frame &f) {
-  std::lock_guard<std::mutex> l(output_mutex_);
-  if (!ready_available_)
-    return false;
-  std::swap(f, ready_);
-  ready_available_ = false;
+  std::shared_ptr<const Frame> shared;
+  if (!take_frame(shared)) return false;
+  f = *shared;
   return true;
 }
 void World::start() {
@@ -448,7 +543,10 @@ void World::start() {
   thread_ = std::thread([this] { run(); });
 }
 void World::stop() {
-  running_ = false;
+  {
+    std::lock_guard<std::mutex> l(wake_mutex_);
+    running_ = false;
+  }
   wake_.notify_all();
   if (thread_.joinable())
     thread_.join();
@@ -467,39 +565,78 @@ void World::stop() {
 }
 void World::run() {
   pthread_setname_np(pthread_self(), "xsim-world");
-  auto deadline = Clock::now() + std::chrono::nanoseconds(dt);
+  const auto nanoseconds = [](Clock::time_point p) {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(p.time_since_epoch()).count();
+  };
+  auto wall = nanoseconds(Clock::now());
+  physics_clock_.rebase(wall, time_);
+  wall_offset_ns_ = time_ - wall;
   bool was_paused = metrics.paused;
+  bool catching_up = false;
   emit();
   while (running_) {
+    // Capture the wake revision before draining the inbox.
+    const auto wake_revision = wake_revision_.load();
     boundary();
-    bool paused = metrics.paused;
-    if (paused && !stepping_) {
+    const auto begin = nanoseconds(Clock::now());
+    if (metrics.paused) {
+      metrics.lag_ns = 0;
+      if (!was_paused) metrics.active_wall_ns += begin - wall;
+      was_paused = true;
+      catching_up = false;
+      unsigned batch = 0;
+      while (running_ && stepping_ && batch++ < catchup_) {
+        advance();
+        boundary();
+      }
       emit();
       std::unique_lock<std::mutex> l(wake_mutex_);
-      wake_.wait_for(l, std::chrono::milliseconds(1));
-      was_paused = true;
+      const auto changed = [&] { return !running_ || wake_revision_ != wake_revision; };
+      if (stepping_) wake_.wait_for(l, std::chrono::microseconds(100), changed);
+      else wake_.wait(l, changed);
       continue;
     }
     if (was_paused) {
-      deadline = Clock::now() + std::chrono::nanoseconds(dt);
+      physics_clock_.rebase(begin, time_);
+      wall_offset_ns_ = time_ - begin;
+      wall = begin;
       was_paused = false;
     }
-    unsigned batch = 0;
-    while (running_ && (!metrics.paused || stepping_) &&
-           Clock::now() >= deadline && batch++ < catchup_) {
-      advance();
-      deadline += std::chrono::nanoseconds(dt);
-      boundary();
-    }
-    metrics.lag_ns = std::max<int64_t>(
-        0, std::chrono::duration_cast<std::chrono::nanoseconds>(
-               Clock::now() - (deadline - std::chrono::nanoseconds(dt)))
-               .count());
-    if (Clock::now() < deadline) {
+    if (!catching_up && begin < physics_clock_.next_wake()) {
       std::unique_lock<std::mutex> l(wake_mutex_);
-      wake_.wait_until(l, deadline);
-    } else
-      std::this_thread::yield();
+      wake_.wait_until(l, Clock::time_point(std::chrono::nanoseconds(physics_clock_.next_wake())),
+                      [&] { return !running_ || wake_revision_ != wake_revision; });
+      continue;
+    }
+    const auto target = physics_clock_.target(begin);
+    const auto before = time_;
+    unsigned batch = 0;
+    while (running_ && !metrics.paused && batch++ < catchup_) {
+      auto h = physics_clock_.step(target, time_);
+      if (!h) break;
+      advance(h);
+      boundary();
+      if (nanoseconds(Clock::now()) - begin >= 4000000) break;
+    }
+    const auto end = nanoseconds(Clock::now());
+    const auto integrated = time_ - before;
+    physics_clock_.observe(integrated, integrated ? end - begin : 0);
+    physics_clock_.schedule(end);
+    metrics.realtime_ns += integrated;
+    metrics.active_wall_ns += end - wall;
+    wall = end;
+    metrics.scheduling_period_ns = physics_clock_.period();
+    metrics.clock_degradations = physics_clock_.degradations();
+    metrics.lag_ns = std::max<int64_t>(0, physics_clock_.target(end) - time_);
+    std::unique_lock<std::mutex> l(wake_mutex_);
+    const auto changed = [&] { return !running_ || wake_revision_ != wake_revision; };
+    catching_up = target - time_ >= PhysicsClock::minimum_step;
+    if (catching_up) {
+      // Catch-up batches wait 100 us, interruptible by stop.
+      wake_.wait_for(l, std::chrono::microseconds(100), [&] { return !running_; });
+    } else {
+      wake_.wait_until(l, Clock::time_point(std::chrono::nanoseconds(physics_clock_.next_wake())), changed);
+    }
   }
 }
 } // namespace xsim

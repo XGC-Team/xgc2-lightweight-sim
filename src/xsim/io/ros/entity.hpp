@@ -1,6 +1,7 @@
 #pragma once
 #include "systems/sensors.hpp"
 #include "io/runtime_io.hpp"
+#include "publishing.hpp"
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <mavros_msgs/AttitudeTarget.h>
@@ -19,15 +20,18 @@
 namespace xsim {
 struct RosEntity {
   RosEntity(const std::shared_ptr<Entity> &, World &, ros::CallbackQueue &,
-            ros::CallbackQueue &, const Json &config);
+            ros::CallbackQueue &, const Json &config, std::shared_ptr<void> owner = {},
+            std::shared_ptr<PublicationMetrics> telemetry_metrics = {},
+            std::shared_ptr<PublicationMetrics> cloud_metrics = {});
   void reconcile(); // event thread only; bind immutable-generation callbacks
-  void publish(const State &); // output thread only
-  bool publish_sensor(); // at most one completed scan; output thread only
+  void publish(const State &, const TelemetryRates &); // stable publication shard only
+  bool publish_sensor(); // at most one completed scan; same shard only
   const Json ros_config;
   std::weak_ptr<Entity> entity;
   World &world;
+  std::shared_ptr<void> runtime_owner;
   ros::NodeHandle input, services;
-  ros::Publisher mocap, mocap_velocity, pose, velocity, imu, raw_imu,
+  BufferedPublisher localization_pose, localization_twist, pose, velocity, imu, raw_imu,
       state, extended, target, odom, cloud, beams;
   ros::Subscriber pva_sub, attitude_sub, velocity_sub;
   ros::ServiceServer arm, mode, command;
@@ -38,9 +42,18 @@ struct RosEntity {
   std::normal_distribution<double> normal{0, 1};
   Eigen::Vector3d noise{Eigen::Vector3d::Zero()};
   bool last_enabled = false, last_armed = false;
+  uint8_t last_landed_state = UINT8_MAX;
   std::string last_mode;
   int64_t last_stamp = -1;
   uint64_t last_generation = UINT64_MAX;
+  TelemetrySchedule schedule;
+  geometry_msgs::PoseStamped localization_pose_message, local_pose_message;
+  geometry_msgs::TwistStamped localization_twist_message, local_twist_message;
+  nav_msgs::Odometry odometry_message;
+  sensor_msgs::Imu imu_message;
+  mavros_msgs::State state_message;
+  mavros_msgs::ExtendedState extended_message;
+  mavros_msgs::AttitudeTarget target_message;
   sensor_msgs::PointCloud2 cloud_message, beam_message;
   std::string topic(const std::string &, const std::string &) const;
 };

@@ -41,7 +41,7 @@ inline GroundContactResult resolveFlatGroundContact(RigidBodyModel &body,
   const Eigen::Vector3d normal_body = state.orientation.conjugate() * normal_world;
   const Eigen::Vector3d r = -p.body_origin_to_com;
   const Eigen::Vector3d lever = r.cross(normal_body);
-  const Eigen::Vector3d inverse_j_lever = p.inertia.llt().solve(lever);
+  const Eigen::Vector3d inverse_j_lever = body.inverse_inertia() * lever;
   const double inverse_effective_mass = 1.0 / p.mass + lever.dot(inverse_j_lever);
   if (!std::isfinite(inverse_effective_mass) || inverse_effective_mass <= 0.0) {
     result.valid = false;

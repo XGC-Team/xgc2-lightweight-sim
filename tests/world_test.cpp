@@ -48,7 +48,8 @@ int main() {
     assert(rejected);
   };
   for (const char *kind : {"fs150", "scout", "mecanum"})
-    for (const char *key : {"provider_service", "truth_topic", "reset_service"})
+    for (const char *key : {"provider_service", "truth_topic", "reset_service",
+                            "mocap_topic", "mocap_velocity_topic"})
       rejected_ros_key(kind, key);
   for (const char *key : {"pose_topic", "velocity_topic", "odometry_topic"}) {
     for (const char *kind : {"scout", "mecanum"})
@@ -78,11 +79,83 @@ int main() {
   Frame output;std::vector<int64_t> stamps;
   for(int k=0;k<20;++k){rate_grid.advance();if(rate_grid.take_frame(output))stamps.push_back(output.stamp-rate_grid.epoch);}
   assert((stamps==std::vector<int64_t>{12000000,21000000,30000000,42000000,51000000,60000000}));
-  // Positive authored timing has no Host-round divisibility/capacity gate.
-  World slow_grid(1700000000000000000LL,201000000,5000000000LL);
-  slow_grid.advance();assert(slow_grid.metrics.sim_ns==1700000000201000000LL);
+  // Unsafe intervals are rejected before any model can be partially stepped.
+  bool unsafe = false;
+  try { World invalid(1700000000000000000LL, 201000000); }
+  catch (const std::invalid_argument &) { unsafe = true; }
+  assert(unsafe);
   World fine_output(1700000000000000000LL,10000000,3000000);
   fine_output.advance();Frame fine;assert(fine_output.take_frame(fine));assert(fine.stamp==fine_output.epoch+10000000);
+  // The shared output pool is bounded and immutable while any consumer holds
+  // a frame. Saturation skips observations, never stalls model integration.
+  {
+    World pooled(1700000000000000000LL, 2000000, 2000000);
+    auto first = add(pooled, "mecanum", "pooled");
+    const auto initial_growth = pooled.metrics.frame_array_grows.load();
+    assert(initial_growth == World::frame_pool_size);
+    std::vector<std::shared_ptr<const Frame>> held;
+    for (size_t i = 0; i < World::frame_pool_size; ++i) {
+      pooled.advance();
+      std::shared_ptr<const Frame> frame;
+      assert(pooled.take_frame(frame));
+      assert(frame->geometry_revision > 0 && frame->states.size() == 1);
+      for (const auto &earlier : held) {
+        assert(earlier.get() != frame.get());
+        assert(earlier->geometry_revision == frame->geometry_revision);
+      }
+      held.push_back(std::move(frame));
+    }
+    const auto oldest_stamp = held.front()->stamp;
+    const auto *const reusable = held.front().get();
+    const auto old_geometry = held.front()->geometry_revision;
+    const auto misses = pooled.metrics.output_misses.load();
+    pooled.advance();
+    std::shared_ptr<const Frame> resumed;
+    assert(!pooled.take_frame(resumed));
+    assert(pooled.metrics.output_misses == misses + 1);
+    assert(pooled.metrics.steps == World::frame_pool_size + 1);
+    for (size_t i = 0; i < held.size(); ++i) {
+      assert(held[i]->stamp == oldest_stamp + int64_t(i) * pooled.dt);
+      assert(held[i]->states.front().key.id == first->id);
+      assert(held[i]->states.front().position == first->config.initial);
+      assert(!held[i]->states.front().enabled);
+    }
+    held.front().reset();
+    pooled.advance();
+    assert(pooled.take_frame(resumed) && resumed.get() == reusable);
+    assert(resumed->stamp == oldest_stamp + int64_t(World::frame_pool_size + 1) * pooled.dt);
+    assert(resumed->geometry_revision == old_geometry);
+    held.clear();
+    for (size_t i = 0; i < World::frame_pool_size * 2; ++i) {
+      pooled.advance();
+      assert(pooled.take_frame(resumed));
+    }
+    assert(pooled.metrics.frame_array_grows == initial_growth);
+
+    const auto retained = resumed;
+    add(pooled, "scout", "second");
+    pooled.advance();
+    assert(pooled.take_frame(resumed));
+    assert(resumed->states.size() == 2 && retained->states.size() == 1);
+    assert(resumed->geometry_revision > retained->geometry_revision);
+    const auto enabled_geometry = resumed->geometry_revision;
+    start(pooled, first);
+    pooled.advance();
+    assert(pooled.take_frame(resumed));
+    assert(resumed->geometry_revision > enabled_geometry);
+    const auto stationary_geometry = resumed->geometry_revision;
+    pooled.advance();
+    assert(pooled.take_frame(resumed));
+    assert(resumed->geometry_revision == stationary_geometry);
+    auto motion = request(pooled, Op::Velocity, {first->id, first->generation});
+    motion->velocity = {1, 0, 0};
+    execute(pooled, motion);
+    pooled.advance();
+    assert(pooled.take_frame(resumed));
+    assert(resumed->geometry_revision > stationary_geometry);
+    assert(retained->states.front().key.generation == 0);
+    assert(retained->states.front().position == first->config.initial);
+  }
   bool overflow=false;try{World invalid(INT64_MAX-1000000,1000000,10000000);}catch(const std::invalid_argument&){overflow=true;}assert(overflow);
   World paced(1700000000000000000LL, 10000000, 10000000);
   const auto wall_start = Clock::now();
@@ -94,7 +167,7 @@ int main() {
   const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
                            Clock::now() - wall_start)
                            .count();
-  assert(completed > 0 && completed * 10000000 <= uint64_t(elapsed));
+  assert(completed > 0 && paced.metrics.sim_ns.load() - paced.epoch <= elapsed);
   paced.stop();
   World w(1700000000000000000LL);
   std::vector<std::shared_ptr<Entity>> entities;

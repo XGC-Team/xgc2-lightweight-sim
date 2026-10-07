@@ -1,6 +1,7 @@
 #pragma once
 #include "config.hpp"
 #include "core/world.hpp"
+#include "telemetry_rates.hpp"
 #include <functional>
 
 namespace xsim {
@@ -8,7 +9,7 @@ namespace xsim {
 // transport resources; there is no second entity roster or lifecycle authority.
 struct EntityIO {
   std::function<void()> reconcile;
-  std::function<void(const State &)> publish;
+  std::function<void(const State &, const TelemetryRates &)> publish;
   std::function<bool()> publish_sensor;
 };
 
@@ -19,5 +20,9 @@ struct RuntimeIO {
   std::function<void()> poll_inputs, poll_services;
   std::function<bool()> okay;
   std::function<void(const Frame &)> publish_frame;
+  std::function<void(const std::shared_ptr<const Frame> &,
+                     const std::shared_ptr<const TelemetryRates> &)> publish_entities;
+  std::function<void()> start_outputs, stop_outputs;
+  std::function<Json()> publication_status;
 };
 } // namespace xsim
