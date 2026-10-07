@@ -3,7 +3,16 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 image="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.2@sha256:8b5059ac3ddab9355899f0e79783f2596ac9726e6bb108c055c74d0bc6c3da42}"
 work="${WORK_DIR:-$root/.work/docker}";out="${OUTPUT_DIR:-$root/debs}";sensor="${XSIM_SENSOR_SOURCE_ROOT:-}"
-while [[ $# -gt 0 ]];do case "$1" in --work-dir)work="$2";shift 2;;--output-dir)out="$2";shift 2;;--sensor-source)sensor="$2";shift 2;;*)echo "unknown argument: $1" >&2;exit 2;;esac;done
+native_contracts=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --work-dir) work="$2"; shift 2 ;;
+    --output-dir) out="$2"; shift 2 ;;
+    --sensor-source) sensor="$2"; shift 2 ;;
+    --native-contracts) native_contracts=true; shift ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
 if [[ -n "${XGC2_DEPENDENCY_SET_DIGEST:-}" && ! "${XGC2_DEPENDENCY_SET_DIGEST}" =~ ^[0-9a-f]{64}$ ]]; then
   echo 'XGC2_DEPENDENCY_SET_DIGEST must be empty or 64 lowercase hex characters' >&2; exit 2
 fi
@@ -28,6 +37,7 @@ docker create --name "$container_name" -i --cpus 2 --pids-limit 256 \
   -e DEBIAN_FRONTEND=noninteractive -v "$root:/source:ro" \
   -e "XGC2_APT_OVERLAY_URL=${XGC2_APT_OVERLAY_URL:-}" \
   -e "XGC2_DEPENDENCY_SET_DIGEST=${XGC2_DEPENDENCY_SET_DIGEST:-}" \
+  -e "XSIM_NATIVE_CONTRACTS=$native_contracts" \
   -v "$(realpath "$sensor"):/sensors:ro" "$image" bash -s >/dev/null
 container_created=true
 docker start -ai "$container_name" <<'XSIM_BUILD'
@@ -46,6 +56,9 @@ fi
 apt-get update
 apt-get install -y --no-install-recommends libxgc2-math-dev libxgc2-robotics-interfaces-dev
 python3 /source/.xgc2/scripts/check_build_inputs.py
+if [[ "$XSIM_NATIVE_CONTRACTS" == true ]]; then
+  bash /source/.xgc2/scripts/check_native_contracts.sh /sensors /source/.xgc2/build-inputs/fs150
+fi
 bash /source/.xgc2/scripts/build_package.sh /sensors /source/.xgc2/build-inputs/fs150 /output
 apt-get install -y /output/xsim_*.deb
 bash /source/.xgc2/scripts/check_installed_packages.sh

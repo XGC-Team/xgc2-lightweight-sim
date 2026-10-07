@@ -223,7 +223,8 @@ int main() {
   start(w, b);
   auto remove = request(w, Op::Remove, {a->id, a->generation});
   execute(w, remove);
-  assert(!a->alive);
+  assert(remove->result.applied && remove->result.success && !remove->result.enabled);
+  assert(!a->alive && !a->enabled);
   auto replacement = add(w, "mecanum", "a");
   assert(replacement->id != a->id);
   start(w, replacement);

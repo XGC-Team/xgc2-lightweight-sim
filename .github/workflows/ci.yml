@@ -21,8 +21,8 @@ jobs:
         repository: XGC-Team/xgc2-scene-generation
         ref: 557aec9529c61636a90056914e3cceedde111e63 # xgc2-scene-generation/noetic
         path: sensor-source
-    - name: Build and install the standalone native server
-      run: .xgc2/scripts/build_debs_in_docker.sh --sensor-source "$GITHUB_WORKSPACE/sensor-source" --output-dir "$GITHUB_WORKSPACE/debs"
+    - name: Check no-ROS native contracts and build the installable server
+      run: .xgc2/scripts/build_debs_in_docker.sh --sensor-source "$GITHUB_WORKSPACE/sensor-source" --output-dir "$GITHUB_WORKSPACE/debs" --native-contracts
     - name: Create the normal build artifact manifest
       run: |
         version="$(awk -F': *' '/^version:/ {print $2;exit}' .xgc2/product.yml)"

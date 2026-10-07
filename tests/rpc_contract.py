@@ -201,6 +201,20 @@ def check(api, config):
     stopped = api.mutate(provider_path, api.body(generation=1, action='stop'))['result']
     assert stopped['success'] and not stopped['enabled'] and stopped['generation'] == 1
 
+    restarted = api.mutate(provider_path, api.body(generation=1, action='start'))['result']
+    assert restarted['success'] and restarted['enabled'] and restarted['generation'] == 2
+    # Deleting an active entity reports its final state, including on receipt replay.
+    remove_path = '/entities/' + str(entity_id)
+    remove_body = api.body(generation=2)
+    removed = api.mutate(remove_path, remove_body, method='DELETE')
+    result = removed['result']
+    assert removed['phase'] == 'applied' and result['applied'] and result['success'], removed
+    assert (result['entity_id'], result['generation'], result['enabled'], result['reason']) == (
+        entity_id, 2, False, 0), result
+    assert entity_id not in {entity['id'] for entity in api.get('/entities')['entities']}
+    code, replay, _ = api.http('DELETE', remove_path, remove_body)
+    assert code == 200 and replay == removed, (code, replay, removed)
+
     rate_body = api.body(rates_hz={'state': 2})
     code, rates_receipt, _ = api.http('POST', '/telemetry-rates', rate_body)
     assert code == 200 and rates_receipt['phase'] == 'applied', (code, rates_receipt)
@@ -268,7 +282,7 @@ def main():
                 process.wait(timeout=10)
             assert process.returncode == 0, (root / 'server.log').read_text()
             assert not Path(socket_path).exists(), 'owned native socket survived exit'
-    print('PASS: RPC discovery, read-only configuration, methods, validation, and provider receipts')
+    print('PASS: RPC discovery, read-only configuration, methods, validation, and lifecycle receipts')
 
 
 if __name__ == '__main__':
