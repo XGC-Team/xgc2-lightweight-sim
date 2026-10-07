@@ -34,3 +34,4 @@ jobs:
           debs/*.deb
           .ci/build-manifests/*.json
         include-hidden-files: true
+        retention-days: 14

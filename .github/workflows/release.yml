@@ -4,7 +4,17 @@ on:
     inputs:
       expected_version: {required: true, type: string}
       expected_source_sha: {required: true, type: string}
+      prepare_action:
+        required: false
+        default: release
+        type: choice
+        options: [release, compatibility-verify]
+      apt_overlay_url: {required: false, default: "", type: string}
+      dependency_set_digest: {required: false, default: "", type: string}
 permissions: {contents: read}
+env:
+  XGC2_APT_OVERLAY_URL: ${{ inputs.apt_overlay_url }}
+  XGC2_DEPENDENCY_SET_DIGEST: ${{ inputs.dependency_set_digest }}
 jobs:
   build-debs:
     strategy:
@@ -25,7 +35,12 @@ jobs:
       env:
         EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
         EXPECTED_VERSION: ${{ inputs.expected_version }}
+        PREPARE_ACTION: ${{ inputs.prepare_action }}
       run: |
+        case "$PREPARE_ACTION" in
+          release|compatibility-verify) ;;
+          *) echo "unsupported prepare_action: $PREPARE_ACTION" >&2; exit 1 ;;
+        esac
         test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
         test "$(awk -F': *' '/^version:/ {print $2;exit}' .xgc2/product.yml)" = "$EXPECTED_VERSION"
     - name: Build and install the standalone native server
@@ -35,9 +50,11 @@ jobs:
         version="$(awk -F': *' '/^version:/ {print $2;exit}' .xgc2/product.yml)"
         python3 .xgc2/scripts/xgc2_artifact_manifest.py build --deb-dir debs --output-dir .ci/build-manifests --product xsim --product-version "$version" --distribution focal --architecture "${{ matrix.arch }}" --source-sha "$GITHUB_SHA" --ci-run-id "$GITHUB_RUN_ID" --ci-workflow "$GITHUB_WORKFLOW" --ci-workflow-ref "$GITHUB_WORKFLOW_REF"
     - uses: actions/upload-artifact@v4
+      if: ${{ inputs.prepare_action == 'release' || inputs.prepare_action == 'compatibility-verify' }}
       with:
         name: xsim-debs-${{ matrix.arch }}
         path: |
           debs/*.deb
           .ci/build-manifests/*.json
         include-hidden-files: true
+        retention-days: 14

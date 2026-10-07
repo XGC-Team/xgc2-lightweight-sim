@@ -4,6 +4,12 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 image="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.2@sha256:8b5059ac3ddab9355899f0e79783f2596ac9726e6bb108c055c74d0bc6c3da42}"
 work="${WORK_DIR:-$root/.work/docker}";out="${OUTPUT_DIR:-$root/debs}";sensor="${XSIM_SENSOR_SOURCE_ROOT:-}"
 while [[ $# -gt 0 ]];do case "$1" in --work-dir)work="$2";shift 2;;--output-dir)out="$2";shift 2;;--sensor-source)sensor="$2";shift 2;;*)echo "unknown argument: $1" >&2;exit 2;;esac;done
+if [[ -n "${XGC2_DEPENDENCY_SET_DIGEST:-}" && ! "${XGC2_DEPENDENCY_SET_DIGEST}" =~ ^[0-9a-f]{64}$ ]]; then
+  echo 'XGC2_DEPENDENCY_SET_DIGEST must be empty or 64 lowercase hex characters' >&2; exit 2
+fi
+if [[ -n "${XGC2_APT_OVERLAY_URL:-}" && -z "${XGC2_DEPENDENCY_SET_DIGEST:-}" ]]; then
+  echo 'XGC2_APT_OVERLAY_URL requires XGC2_DEPENDENCY_SET_DIGEST' >&2; exit 2
+fi
 [[ -f "$sensor/xgc2_world_lidar/library/CMakeLists.txt" ]] || { echo 'an explicit owning convex_geometry source is required' >&2;exit 2; }
 mkdir -p "$work" "$out"
 container_name="xgc2-xsim-build-$(date +%s)-$$"
@@ -20,6 +26,8 @@ trap 'exit 143' TERM
 # Only source inputs are mounted; docker cp leaves host output owned by the caller.
 docker create --name "$container_name" -i --cpus 2 --pids-limit 256 \
   -e DEBIAN_FRONTEND=noninteractive -v "$root:/source:ro" \
+  -e "XGC2_APT_OVERLAY_URL=${XGC2_APT_OVERLAY_URL:-}" \
+  -e "XGC2_DEPENDENCY_SET_DIGEST=${XGC2_DEPENDENCY_SET_DIGEST:-}" \
   -v "$(realpath "$sensor"):/sensors:ro" "$image" bash -s >/dev/null
 container_created=true
 docker start -ai "$container_name" <<'XSIM_BUILD'
@@ -32,6 +40,9 @@ install -d -m0755 /etc/apt/keyrings
 curl -fsSL https://xgc2.apt.xiaokang.ink/xgc2-archive-keyring.gpg -o /etc/apt/keyrings/xgc2-archive-keyring.gpg
 gpg --batch --show-keys --with-colons /etc/apt/keyrings/xgc2-archive-keyring.gpg | awk -F: '$1=="fpr"{print $10}' | grep -Fxq 2A8E11B36F56D307ADF626D85E5FDC30979EA43F
 echo "deb [signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] https://xgc2.apt.xiaokang.ink focal main" >/etc/apt/sources.list.d/xgc2.list
+if [[ -n "${XGC2_APT_OVERLAY_URL:-}" && "${XGC2_DEPENDENCY_SET_DIGEST}" != 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945 ]]; then
+  echo "deb [signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] ${XGC2_APT_OVERLAY_URL%/} focal main" >/etc/apt/sources.list.d/00-xgc2-release-train.list
+fi
 apt-get update
 apt-get install -y --no-install-recommends libxgc2-math-dev libxgc2-robotics-interfaces-dev
 python3 /source/.xgc2/scripts/check_build_inputs.py
