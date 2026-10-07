@@ -103,7 +103,11 @@ Result World::apply(Command &c) {
   }
   if (c.op == Op::Resume) {
     if (stepping_) { r.success = false; r.reason = 2; return r; }
+    if (!metrics.paused) return r;
     const auto wall = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count();
+    // Rebase both clocks at the transition, including Pause/Resume commands
+    // consumed in one boundary before run() can observe the paused state.
+    physics_clock_.rebase(wall, time_);
     wall_offset_ns_ = time_ - wall;
     metrics.paused = false;
     return r;
@@ -220,6 +224,7 @@ Result World::apply(Command &c) {
       erase(mecanums_, mecanum_ids_, mecanum_poses_);
     slots_.erase(found);
     geometry_dirty_ = true;
+    r.enabled = false;
     return r;
   }
   if (c.op == Op::Reset) {
@@ -597,9 +602,9 @@ void World::run() {
       continue;
     }
     if (was_paused) {
-      physics_clock_.rebase(begin, time_);
-      wall_offset_ns_ = time_ - begin;
-      wall = begin;
+      // Resume already set the shared anchor. Include any work after that
+      // command in this boundary in the active-wall denominator as well.
+      wall = time_ - wall_offset_ns_.load();
       was_paused = false;
     }
     if (!catching_up && begin < physics_clock_.next_wake()) {
@@ -608,11 +613,12 @@ void World::run() {
                       [&] { return !running_ || wake_revision_ != wake_revision; });
       continue;
     }
-    const auto target = physics_clock_.target(begin);
     const auto before = time_;
     unsigned batch = 0;
     while (running_ && !metrics.paused && batch++ < catchup_) {
-      auto h = physics_clock_.step(target, time_);
+      // A boundary can pause and resume within this batch. Re-read the clock
+      // mapping so its old catch-up target cannot outlive the resume rebase.
+      auto h = physics_clock_.step(physics_clock_.target(begin), time_);
       if (!h) break;
       advance(h);
       boundary();
@@ -630,7 +636,7 @@ void World::run() {
     metrics.lag_ns = std::max<int64_t>(0, physics_clock_.target(end) - time_);
     std::unique_lock<std::mutex> l(wake_mutex_);
     const auto changed = [&] { return !running_ || wake_revision_ != wake_revision; };
-    catching_up = target - time_ >= PhysicsClock::minimum_step;
+    catching_up = physics_clock_.target(begin) - time_ >= PhysicsClock::minimum_step;
     if (catching_up) {
       // Catch-up batches wait 100 us, interruptible by stop.
       wake_.wait_for(l, std::chrono::microseconds(100), [&] { return !running_; });

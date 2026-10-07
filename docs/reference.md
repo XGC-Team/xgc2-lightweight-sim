@@ -64,7 +64,7 @@ ROS_MASTER_URI=http://127.0.0.1:PRIVATE_PORT \
 
 正常唤醒的微小抖动直接包含在实际 dt 中；单步不超过当前自适应周期的 1.25 倍，并受 `max_model_step_ns` 限制。短时落后按 `catchup_batch` 和每批约 4 ms 运算预算追赶，批间阻塞让出 100 µs。持续运算负载每 100 ms 评估，连续两窗超过 80% 才将周期增加 25%；连续五窗低于 50% 后逐窗减少 5%，回到名义周期。空闲时等待绝对 deadline，暂停时等待管理事件，无忙轮询。达到步长上限仍不足以实时运行时，保持真实 lag，不丢物理时间、不伪造墙钟时间戳。
 
-Pause 冻结时钟，Resume 重置墙钟锚点，不追赶暂停期间的时间；暂停 Step N 仍确定地前进 N 个名义步。Step 尚未完成时 Resume 被拒绝。实时连续输入带到达时间下界，在下一世界边界生效，不提前作用于历史债务；未来时间戳同样允许到下一边界才生效。输入不按逐机器人的微秒到达时刻切分整群积分。
+Pause 冻结时钟；Resume 仅在 paused 转为 running 时重置墙钟锚点，不追赶暂停期间的时间。已经运行时的 Resume 为幂等操作，保持当前墙钟到仿真时间的映射。暂停 Step N 仍确定地前进 N 个名义步。Step 尚未完成时 Resume 被拒绝。实时连续输入带到达时间下界，在下一世界边界生效，不提前作用于历史债务；未来时间戳同样允许到下一边界才生效。输入不按逐机器人的微秒到达时刻切分整群积分。
 
 `publish_clock=true` 时，监督者必须保证该 ROS 图内只有一个 `/clock` 发布者，并为消费者一致设置 `/use_sim_time`。`/clock` 属于 ROS IO，在任何机器人 Provider 启用前即可发布；无 ROS 构建仍保留世界整数时钟。
 
@@ -91,7 +91,7 @@ Unix socket 权限为 `0600`，父目录须已存在。已有 socket 路径会�
 - **Start**：inactive Provider 必须携带当前 generation 做 CAS；重建该实体初始模型、generation 加一并启用。已 active 时接受当前或前一代 generation，不重复重置模型。
 - **Stop**：要求当前 generation；禁用 Provider，generation 不变。FS150 继续最后电机状态的被动动力学，测量输出被门控；Scout/Mecanum 的适用速度输入归零，Scout 的延迟响应继续趋稳。再次 start 重置模型。
 - **Reset**：重建模型，清除控制器、滤波器和电机历史，恢复初始位姿，generation 加一；保持 enabled 状态，不回拨世界时间。全世界 reset 对采集的全部实体身份/generation 做 CAS 后原子应用。
-- **Remove**：要求当前 generation；从世界移除实体，置 dead/disabled，退休其 IO 和传感器资源。
+- **Remove**：要求当前 generation；从世界移除实体，置 dead/disabled，退休其 IO 和传感器资源；成功删除回执中的 `enabled` 为 `false`。
 
 Pause 冻结物理时间，仍执行管理和服务。Step 只在 paused 且没有未完成 step 时接受正整数步数，完成指定数量的全世界步后仍保持 paused。
 
@@ -241,7 +241,7 @@ World 在每步边界按序执行离散命令，再按类型连续遍历机器�
 
 Noetic ROS IO 缓存非 latched Publication，序列化在分片线程执行，再交给 ROS Poll 线程的原发布队列；发送不在 World 上执行。每个话题初始 4 个 wire 缓冲，只有 ROS 释放引用后才能复用。槽位耗尽时按当前连接数 N 补至 N+4 个，保留已有容量；数据容量仅在峰值扩大时增长。达到这个容量仍无空槽时跳过本次交接，不阻塞；缓冲占用不改变采样频率。每个 TCP 连接的 ROS 待发送队列为 1，队满丢旧待发消息，在途消息仍由 ROS/TCP 完成。消息对象与 frame 字符串复用。点云 payload 直接序列化成 TCPROS 字节，不先复制到临时 PointCloud2 的 data。ROS 队列、连接和内核传输仍可分配、复制；这些复用不等于整个 ROS 进程零分配或端到端零拷贝。
 
-点云限额按序列化字节数乘连接数计算，包括本机连接及 beam，不包含 TCP/IP 头或重传。令牌桶允许一个采样包的突发，超过预算时跳过本次点云并反馈采样降频；定位及其他遥测不受该限额影响。限额是静态世界配置，不能保证网卡实际交付带宽；传输缓冲拥塞也会反馈降频。压力按采样 generation 标记；旧 generation 不影响新一代采样，已经交给 ROS 的数据包不能撤回。
+点云和 beam 的 `bytes_estimate` 按交给 ROS 的序列化字节数乘连接数统计，不包含 TCP/IP 头或重传，也不代表订阅者已收到的数据。当前没有点云带宽限额或令牌桶。发布时没有可用 wire 缓冲会丢弃本次交接，并累计 `buffer_drops` 和 `backpressure_ns`，这些指标不反馈调整 Sensor 采样周期。Sensor 自身根据扫描耗时、待处理或完成样本积压和 payload 池压力独立退避；已经交给 ROS 的数据包不能撤回。
 
 Sensor 使用可选组件及输出 Frame 采样。IO 资源随 Entity 退休。
 

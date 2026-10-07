@@ -1,9 +1,96 @@
 #include "core/physics_clock.hpp"
 #include "core/world.hpp"
 #include <cassert>
+#include <future>
 #include <iostream>
 using namespace xsim;
+namespace {
+// The world releases the last ticket reference after processing it at a
+// boundary. This fixture can hold that boundary without a production hook.
+class BoundaryGate {
+public:
+  explicit BoundaryGate(World &world) {
+    auto arrived = std::make_shared<std::promise<void>>();
+    arrival_ = arrived->get_future();
+    auto release = release_.get_future().share();
+    Ticket ticket(new Command, [arrived, release](Command *command) {
+      delete command;
+      arrived->set_value();
+      release.wait();
+    });
+    ticket->op = Op::Provider; // Unknown entity: no world state change.
+    world.submit(ticket);
+  }
+  ~BoundaryGate() { open(); }
+  void wait() { assert(arrival_.wait_for(std::chrono::seconds(5)) == std::future_status::ready); }
+  void open() {
+    if (!opened_) {
+      opened_ = true;
+      release_.set_value();
+    }
+  }
+private:
+  std::promise<void> release_;
+  std::future<void> arrival_;
+  bool opened_ = false;
+};
+int64_t wall_ns() {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count();
+}
+struct OffsetRange { int64_t lower, upper; };
+OffsetRange input_offset(World &world) {
+  auto input = std::make_shared<Command>();
+  input->op = Op::Velocity;
+  input->at = INT64_MAX; // Observe its arrival guard without applying it.
+  const auto before = wall_ns();
+  world.submit(input);
+  const auto after = wall_ns();
+  assert(input->arrival_ns > 0);
+  return {input->arrival_ns - after, input->arrival_ns - before};
+}
+void resume_clock_regression(bool pause_in_boundary) {
+  World world(1700000000000000000LL);
+  BoundaryGate first(world);
+  world.start();
+  first.wait();
+  const auto original = input_offset(world);
+  // Create a known wall-time debt while the gate prevents any integration.
+  // Oversleep only increases that debt; it is not used to infer thread progress.
+  std::this_thread::sleep_until(Clock::time_point(std::chrono::nanoseconds(
+      world.metrics.sim_ns.load() - original.lower + 16 * world.dt)));
+  if (pause_in_boundary) {
+    auto pause = std::make_shared<Command>();
+    pause->op = Op::Pause;
+    world.submit(pause);
+  }
+  auto resume = std::make_shared<Command>();
+  resume->op = Op::Resume;
+  resume->deadline = Clock::now() + std::chrono::seconds(5);
+  world.submit(resume);
+  BoundaryGate second(world);
+  first.open();
+  second.wait();
+  assert(resume->phase == 2 && resume->result.success && !world.metrics.paused);
+  if (!pause_in_boundary) {
+    const auto repeated = input_offset(world);
+    assert(original.lower <= repeated.upper && repeated.lower <= original.upper);
+  } else {
+    // This boundary is inside a catch-up batch. Its Pause/Resume pair must
+    // invalidate the target captured before it, with no extra historical step.
+    const auto resumed_time = world.metrics.sim_ns.load();
+    BoundaryGate next(world);
+    second.open();
+    next.wait();
+    assert(world.metrics.sim_ns == resumed_time);
+    next.open();
+  }
+  second.open();
+  world.stop();
+}
+} // namespace
 int main() {
+  resume_clock_regression(false);
+  resume_clock_regression(true);
   PhysicsClock clock(2000000, 10000000);
   clock.rebase(0, 0);
   assert(clock.step(clock.target(2350000), 0) == 2350000);
@@ -110,5 +197,5 @@ int main() {
             << " rtf=" << double(duration) / double(wall_duration)
             << " period_ns=" << fleet.metrics.scheduling_period_ns
             << " last_dt_ns=" << fleet.metrics.last_dt_ns << '\n';
-  std::cout << "PASS: actual dt, stall catch-up, bounded adaptive load, recovery, pause and manual step\n";
+  std::cout << "PASS: actual dt, stall catch-up, bounded adaptive load, recovery, idempotent resume, boundary rebase, pause and manual step\n";
 }
