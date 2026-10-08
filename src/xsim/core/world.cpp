@@ -70,12 +70,50 @@ bool World::wait(const Ticket &t) {
   return t->phase.load(std::memory_order_acquire) == 2;
 }
 void World::finish(const Ticket &t, Result r) {
-  r.applied = true;
+  const bool capture = r.success || r.interrupted;
+  if (capture && t->capture_state && !r.has_state && r.key.id) {
+    const auto found = slots_.find(r.key.id);
+    if (found != slots_.end()) {
+      r.state = state(found->first, found->second);
+      r.has_state = true;
+    }
+  }
+  if (t->capture_states) {
+    t->states.clear();
+    // A delayed Step can finish after membership changes. Never allocate on
+    // the world thread if its caller supplied insufficient result capacity.
+    if (capture && t->states.capacity() < slots_.size()) {
+      r.success = false;
+      r.reason = 5;
+    } else if (capture) {
+      for (const auto &entry : slots_)
+        t->states.push_back(state(entry.first, entry.second));
+    }
+  }
+  if (!r.interrupted) r.applied = true;
   r.stamp = time_;
   r.step = steps_;
-  t->result = r;
-  t->phase.store(2, std::memory_order_release);
+  r.paused = metrics.paused;
+  const int terminal_phase = r.interrupted ? 4 : 2;
+  t->result = std::move(r);
+  t->phase.store(terminal_phase, std::memory_order_release);
   t->done.notify_all();
+  t->signal();
+}
+void World::cancel_pending_controls(Key key) {
+  const auto cancel = [key](const Ticket &ticket) {
+    if (!continuous(ticket->op) || ticket->key.id != key.id ||
+        ticket->key.generation != key.generation)
+      return;
+    int queued = 0;
+    if (ticket->phase.compare_exchange_strong(queued, 3)) {
+      ticket->done.notify_all();
+      ticket->signal();
+    }
+  };
+  for (const auto &ticket : commands_) cancel(ticket);
+  std::lock_guard<std::mutex> lock(input_mutex_);
+  for (const auto &ticket : inbox_) cancel(ticket);
 }
 void World::reset(Slot &s, Model &&m) {
   auto &e = *s.entity;
@@ -97,6 +135,15 @@ void World::reset(Slot &s, Model &&m) {
 Result World::apply(Command &c) {
   Result r;
   r.success = true;
+  if (c.capture_states) {
+    c.states.clear();
+    const auto required = slots_.size() + (c.op == Op::Add ? 1 : 0);
+    if (c.states.capacity() < required) {
+      r.success = false;
+      r.reason = 5;
+      return r;
+    }
+  }
   if (c.op == Op::Pause) {
     metrics.paused = true;
     return r;
@@ -114,9 +161,10 @@ Result World::apply(Command &c) {
   }
   if (c.op == Op::Step) {
     r.success = metrics.paused && c.steps > 0 && stepping_ == 0 && c.steps<=uint64_t((INT64_MAX-time_)/dt);
-    if (r.success)
+    if (r.success) {
+      c.starting_step = steps_;
       stepping_ = c.steps;
-    else
+    } else
       r.reason = 2;
     return r;
   }
@@ -160,7 +208,7 @@ Result World::apply(Command &c) {
     return r;
   }
   if (c.op == Op::Reset && !c.key.id) {
-    if (c.resets.size() != slots_.size()) {
+    if (c.action == 0 && c.resets.size() != slots_.size()) {
       r.success = false;
       r.reason = 1;
       return r;
@@ -202,6 +250,10 @@ Result World::apply(Command &c) {
     c.retired = s.entity;
     e.alive = false;
     e.enabled = false;
+    if (c.capture_state) {
+      r.state = state(e.id, s);
+      r.has_state = true;
+    }
     auto erase = [&](auto &models, auto &ids, auto &columns) {
       if (i + 1 != models.size()) {
         models[i] = std::move(models.back());
@@ -230,6 +282,24 @@ Result World::apply(Command &c) {
   if (c.op == Op::Reset) {
     reset(s, std::move(c.prepared->model));
     r.key.generation = e.generation;
+    return r;
+  }
+  if (c.op == Op::SetEnabled) {
+    if (!c.enabled) {
+      cancel_pending_controls({e.id, e.generation});
+      if (e.config.kind == Kind::Scout)
+        scouts_[i].model.command(scouts_[i].age, 0, 0);
+      else if (e.config.kind == Kind::Mecanum)
+        mecanums_[i].model.command(0, 0, 0);
+    }
+    e.enabled = c.enabled;
+    if (e.config.kind == Kind::FS150) {
+      flight_enabled_[i] = c.enabled;
+      if (c.enabled) flights_[i].ever_started = true;
+    }
+    // Unlike the legacy Provider start, this does not reconstruct a model,
+    // change its generation, or reset its physical/controller state.
+    r.enabled = c.enabled;
     return r;
   }
   if (c.op == Op::Provider) {
@@ -339,6 +409,7 @@ void World::boundary() {
     if (Clock::now() >= t->deadline) {
       t->phase.compare_exchange_strong(expected, 3);
       t->done.notify_all();
+  t->signal();
       continue;
     }
     if (!t->phase.compare_exchange_strong(expected, 1))
@@ -387,6 +458,7 @@ void World::advance(int64_t elapsed_ns) {
     for (auto &t : step_waiters_) {
       Result r;
       r.success = true;
+      r.completed_steps = steps_ - t->starting_step;
       finish(t, r);
     }
     step_waiters_.clear();
@@ -543,9 +615,23 @@ bool World::take_frame(Frame &f) {
   return true;
 }
 void World::start() {
-  if (running_.exchange(true))
-    return;
-  thread_ = std::thread([this] { run(); });
+  std::unique_lock<std::mutex> lock(wake_mutex_);
+  if (!running_) {
+    if (thread_.joinable())
+      throw std::logic_error("previous world thread must be stopped before restart");
+    started_ = false;
+    startup_error_ = nullptr;
+    running_ = true;
+    try {
+      thread_ = std::thread([this] { run(); });
+    } catch (...) {
+      running_ = false;
+      throw;
+    }
+  }
+  started_wake_.wait(lock, [this] { return started_ || startup_error_ || !running_; });
+  if (startup_error_) std::rethrow_exception(startup_error_);
+  if (!started_) throw std::runtime_error("world stopped before native startup completed");
 }
 void World::stop() {
   {
@@ -553,6 +639,7 @@ void World::stop() {
     running_ = false;
   }
   wake_.notify_all();
+  started_wake_.notify_all();
   if (thread_.joinable())
     thread_.join();
   std::lock_guard<std::mutex> l(input_mutex_);
@@ -560,13 +647,18 @@ void World::stop() {
   for (auto &t : commands_) {
     t->phase = 3;
     t->done.notify_all();
+  t->signal();
   }
   commands_.clear();
   for (auto &t : step_waiters_) {
-    t->phase = 3;
-    t->done.notify_all();
+    Result result;
+    result.interrupted = true;
+    result.completed_steps = steps_ - t->starting_step;
+    result.applied = result.completed_steps != 0;
+    finish(t, std::move(result));
   }
   step_waiters_.clear();
+  stepping_ = 0;
 }
 void World::run() {
   pthread_setname_np(pthread_self(), "xsim-world");
@@ -574,11 +666,34 @@ void World::run() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(p.time_since_epoch()).count();
   };
   auto wall = nanoseconds(Clock::now());
-  physics_clock_.rebase(wall, time_);
-  wall_offset_ns_ = time_ - wall;
   bool was_paused = metrics.paused;
   bool catching_up = false;
-  emit();
+  try {
+    physics_clock_.rebase(wall, time_);
+    wall_offset_ns_ = time_ - wall;
+    boundary();
+    // Every start must publish this native generation's first frame, including
+    // a restart at an unchanged simulation time. A saturated output pool must
+    // not be reported as initialized merely because its thread exists.
+    emitted_stamp_ = -1;
+    emitted_revision_ = UINT64_MAX;
+    emit();
+    if (emitted_stamp_ != time_ || emitted_revision_ != revision_)
+      throw std::runtime_error("initial world snapshot could not be published");
+  } catch (...) {
+    {
+      std::lock_guard<std::mutex> lock(wake_mutex_);
+      startup_error_ = std::current_exception();
+      running_ = false;
+    }
+    started_wake_.notify_all();
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(wake_mutex_);
+    started_ = true;
+  }
+  started_wake_.notify_all();
   while (running_) {
     // Capture the wake revision before draining the inbox.
     const auto wake_revision = wake_revision_.load();

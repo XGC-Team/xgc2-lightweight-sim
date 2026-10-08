@@ -121,3 +121,62 @@ Json load_config(const std::string &path, const std::string &scene_file) {
  return resolve_scene_file(load_json_object(path), scene_file);
 }
 } // namespace xsim
+
+namespace xsim {
+namespace {
+Json inline_artifact(const Json& asset, const char* media_type) {
+  const auto& realization = asset.at("realization");
+  if (asset.at("id").get<std::string>().empty()) throw std::invalid_argument("asset ID required");
+  if (realization.at("media_type") != media_type) throw std::invalid_argument("unsupported asset realization media_type");
+  if (!realization.contains("content") || realization.contains("uri"))
+    throw std::invalid_argument("this xsim realization requires inline content; URI resolution is not configured");
+  const auto& content = realization.at("content");
+  const auto value = content.is_string() ? Json::parse(content.get<std::string>()) : content;
+  if (!value.is_object()) throw std::invalid_argument("asset content must be a JSON object");
+  return value;
+}
+void public_pose(Json& native, const Json& pose) {
+  const auto position = vec3(pose.at("position"));
+  const auto& q = pose.at("orientation");
+  if (!q.is_array() || q.size() != 4) throw std::invalid_argument("orientation must be an xyzw unit quaternion");
+  Eigen::Quaterniond orientation(q[3].get<double>(), q[0].get<double>(), q[1].get<double>(), q[2].get<double>());
+  if (!orientation.coeffs().allFinite() || std::abs(orientation.norm() - 1.0) > 1e-6)
+    throw std::invalid_argument("orientation must be a finite unit quaternion");
+  if (std::abs(orientation.x()) > 1e-8 || std::abs(orientation.y()) > 1e-8)
+    throw std::invalid_argument("xsim robot assets support yaw-only initial orientation");
+  native["position"] = {position.x(), position.y(), position.z()};
+  native["yaw"] = 2.0 * std::atan2(orientation.z(), orientation.w());
+}
+}
+Json entity_artifact(const Json& specification) {
+  for (auto i = specification.begin(); i != specification.end(); ++i)
+    if (i.key() != "id" && i.key() != "role" && i.key() != "asset" && i.key() != "pose" && i.key() != "parameters" && i.key() != "sensors")
+      throw std::invalid_argument("unknown entity specification field: " + i.key());
+  if (specification.at("role") != "robot") throw std::invalid_argument("this xsim realization supports robot entities");
+  if ((specification.contains("parameters") && !specification.at("parameters").empty()) ||
+      (specification.contains("sensors") && !specification.at("sensors").empty()))
+    throw std::invalid_argument("entity extension parameters and sensor specs are not supported by this artifact schema");
+  auto native = inline_artifact(specification.at("asset"), "application/vnd.xgc2.xsim.entity+json");
+  public_pose(native, specification.at("pose"));
+  (void)parse_entity(native);
+  return native;
+}
+Json load_manifest(const std::string& path) {
+  const auto manifest = load_config(path);
+  if (manifest.at("api_version") != 1) throw std::invalid_argument("manifest api_version must be 1");
+  for (auto i = manifest.begin(); i != manifest.end(); ++i)
+    if (i.key() != "api_version" && i.key() != "world" && i.key() != "entities") throw std::invalid_argument("unknown manifest field: " + i.key());
+  auto config = inline_artifact(manifest.at("world").at("asset"), "application/vnd.xgc2.xsim.world+json");
+  if (config.contains("instance_id") || config.contains("entities")) throw std::invalid_argument("world artifact cannot supply instance_id or entities; manifest owns membership");
+  if (!config.contains("epoch_ns")) throw std::invalid_argument("world artifact requires an explicit epoch_ns");
+  config["entities"] = Json::array();
+  for (const auto& specification : manifest.value("entities", Json::array())) {
+    auto native = entity_artifact(specification);
+    native["public_id"] = specification.value("id", native.at("name").get<std::string>());
+    native["specification"] = specification;
+    config["entities"].push_back(std::move(native));
+  }
+  if (config["entities"].size() > 256) throw std::invalid_argument("manifest entity limit exceeded");
+  return config;
+}
+} // namespace xsim

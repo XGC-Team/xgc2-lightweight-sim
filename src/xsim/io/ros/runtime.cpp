@@ -103,7 +103,7 @@ struct RosRuntime {
           const auto started = Clock::now();
           for (const auto &state : frame->states)
             if (state.key.id % lanes.size() == index)
-              if (auto e = state.entity.lock(); e && e->io && e->io->publish)
+              if (auto e = state.entity.lock(); e && e->alive && e->io && e->io->publish)
                 e->io->publish(state, *rates);
           const auto ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - started).count());
           prepare_ns += ns;
@@ -114,7 +114,7 @@ struct RosRuntime {
           const size_t at = (cursor + n) % frame->states.size();
           const auto &state = frame->states[at];
           if (state.key.id % lanes.size() != index) continue;
-          if (auto e = state.entity.lock(); e && e->io && e->io->publish_sensor && e->io->publish_sensor()) {
+          if (auto e = state.entity.lock(); e && e->alive && e->io && e->io->publish_sensor && e->io->publish_sensor()) {
             cursor = (at + 1) % frame->states.size();
             busy = true;
             break;

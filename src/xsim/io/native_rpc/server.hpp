@@ -4,26 +4,28 @@
 #include <csignal>
 #include <deque>
 #include <mutex>
-#include <poll.h>
-#include <sys/types.h>
+#include <xgc2/xrpc/http.hpp>
 #include <thread>
 #include <unordered_map>
 namespace xsim {
+struct RpcOptions {
+  std::string target_id;
+  xgc2::xrpc::HttpLimits limits;
+  int retained_parent_fd = -1;
+  Json robot_bindings = Json::object();
+  bool frozen_experiment = false;
+};
 class Server {
 public:
-  Server(const Json &config, const std::string &socket, World &, Sensors &, RuntimeIO io = {});
-  ~Server();
+  Server(const Json &config, const std::string &socket, RpcOptions,
+         World &, Sensors &, RuntimeIO io = {});
+  ~Server() noexcept;
   void run(const volatile sig_atomic_t &stopping);
 private:
-  struct Client {
-    int fd;
-    std::string input, output;
-    size_t sent = 0;
-    Clock::time_point deadline = Clock::now() + std::chrono::seconds(5);
-  };
   struct Preparation {
     std::atomic<bool> done{false};
     std::unique_ptr<Prepared> value;
+    std::vector<std::pair<Key, Model>> resets;
     std::string error;
   };
   struct Request {
@@ -35,22 +37,47 @@ private:
     bool submitted = false;
     Json immediate = nullptr;
     bool terminal_seen = false;
+    std::string fingerprint, kind, public_id;
+    std::vector<xgc2::xrpc::HttpReply> waiters;
+    // Frozen public identities for this operation; no IO/resource ownership.
+    Json result_entities = Json::array();
+    std::size_t retained_bytes = 0;
+    std::weak_ptr<Sensor> retiring_sensor;
+    bool retirement_started = false;
+  };
+  struct PublicEntity {
+    uint64_t generation;
+    Json specification;
+    std::weak_ptr<Entity> resource;
+
   };
   std::string instance_;
+  std::string socket_path_;
+  std::string target_id_;
+  xgc2::xrpc::HttpLimits limits_;
+  std::unordered_map<std::string, PublicEntity> entities_;
+  uint64_t next_generation_ = 1;
+  Clock::time_point next_expiry_ = Clock::now();
+  void harvest();
+  Json entity_json(const std::string &, const PublicEntity &);
+  Json entity_json(const std::string &, const PublicEntity &, const State *);
+  Json describe();
+  Json health() const;
+  void change_health(const std::string &);
+  void prune_waiters();
+  std::string health_state_ = "starting";
+  uint64_t health_revision_ = 1;
+  bool initialized_ = false, workers_started_ = false, outputs_started_ = false;
+  bool shutting_down_ = false;
+  std::vector<xgc2::xrpc::HttpReply> health_waiters_;
+  bool simulation_request(const xgc2::xrpc::HttpRequest &, const Json &, xgc2::xrpc::HttpReply);
+  void respond(xgc2::xrpc::HttpReply, int, Json);
+
   RuntimeIO io_;
   Json world_configuration_;
   World &world_;
   Sensors &sensors_;
-  struct BoundSocket {
-    int fd = -1;
-    std::string path;
-    dev_t device = 0;
-    ino_t inode = 0;
-    bool owns_path = false;
-    ~BoundSocket();
-  } socket_;
-  std::vector<Client> clients_;
-  std::vector<pollfd> poll_fds_;
+  std::unique_ptr<xgc2::xrpc::HttpServer> transport_;
   std::unordered_map<std::string, Request> requests_;
   std::mutex view_mutex_;
   std::shared_ptr<const Frame> latest_;
@@ -64,19 +91,22 @@ private:
   std::deque<std::function<void()>> preparation_tasks_;
   std::vector<std::thread> service_workers_;
   std::atomic<bool> preparing_{false};
+  std::mutex started_mutex_;
+  std::condition_variable started_wake_;
+  unsigned service_started_ = 0;
+  bool output_started_ = false;
+  std::atomic<bool> worker_failed_{false};
+  std::exception_ptr worker_error_, cleanup_error_;
+  void worker_failed() noexcept;
   std::unique_ptr<Prepared> prepare(const Json &);
   std::unique_ptr<Prepared> prepare(const std::shared_ptr<Entity> &, const Json &);
   void service_work();
-  void shutdown();
+  void shutdown() noexcept;
   void output();
   Json status();
   Json telemetry_rates();
-  Json capabilities();
   std::shared_ptr<const Frame> view();
   Json receipt(const std::string &, const Ticket &);
-  Json route(const std::string &, const std::string &, const Json &, int &);
-  void reply(Client &);
-  void respond(Client &, int, Json);
-  void poll_once();
+  void http_request(xgc2::xrpc::HttpRequest, xgc2::xrpc::HttpReply);
 };
 } // namespace xsim

@@ -1,6 +1,6 @@
 # xsim 配置与接口参考
 
-`xsim` 是一个世界一个进程的仿真服务器，管理实体身份、物理状态、Provider generation 和仿真时钟。ROS1 是可选的输入输出边界；管理使用 Unix socket 上的 HTTP/JSON。配置示例见 [example.json](../config/example.json)，总览见 [README](../README.md)。
+`xsim` 是一个世界一个进程的仿真服务器，管理实体身份、物理状态、实体 generation 和仿真时钟。ROS1 是可选的输入输出边界；管理使用 Unix socket 上的 HTTP/JSON。配置示例见 [example.json](../config/example.json)，总览见 [README](../README.md)。
 
 ## 构建、安装与打包
 
@@ -36,10 +36,10 @@ GPU 后端要求传感器库启用 `XGC_WORLD_LIDAR_GPU=ON`，xsim 启用 `XSIM_
 ```sh
 source /opt/ros/noetic/setup.bash
 ROS_MASTER_URI=http://127.0.0.1:PRIVATE_PORT \
-  /private/install/bin/xsim --config /private/world.json --socket /private/world.sock
+  /private/install/bin/xsim --bootstrap-input /private/bootstrap.json --config /private/world.json
 ```
 
-`--socket` 必填，`--config` 与 `--experiment-file` 必须且只能选择一个。ROS 构建的节点名为 `/xsim`。监督者负责冻结输入、ROS master 和时间域选择、进程启动、重启与崩溃恢复。
+`--bootstrap-input` 必填；`--config`、`--experiment-file` 与 `--manifest` 必须且只能选择一个。Unix endpoint 来自共享 BootstrapInput；如显式传入 `--socket`，它必须与 binding 完全相同。ROS 构建的节点名为 `/xsim`。监督者负责冻结输入、ROS master 和时间域选择、进程启动、重启与崩溃恢复。
 
 `--experiment-file` 使用公开冻结输入 `{instanceId:string, epochNs:string, robots:array, context:object, settings:object}`。`robots` 原样来自 `asset.experiment-robots@4`，同时保留 `authoredSimulationSensors` 的零值和字段存在性；既有 `simulationSensors` Runtime 默认值不会用于原生世界投影。`context.openingRunId` 和 `context.openingAcceptedAtEpochNs` 必须分别与 `instanceId`、`epochNs` 一致，纳秒为正的 int64 十进制字符串。`containerizedDeployment:false` 和 Core placement 必須明确存在；历史上下文缺少这些事实时不能补猜。`context.visualizationTopics` 按原 preset 顺序保存其声明数组，原生产品解释 reference-cloud 语义，不带其它 Action Inputs。产品据冻结场景参数、原始 roster 和 `settings.autoStartGazeboServer` 解析模型、时序、FCU、FNV 噪声 seed 与传感器，并拒绝未实现组合。它不回读可变资产，不用进程启动时钟替代 Session 时间。两种输入入口共用有界、拒绝重复键和符号链接的文件读取器，并同样接受可空的 `--scene-file`。
 
@@ -88,14 +88,8 @@ Unix socket 权限为 `0600`；缺失父目录由服务器以 `0700` 创建，�
 
 `local_origin` 仅平移世界轴：MAVROS local pose 为世界位置减该向量；frame-1 local PVA 位置加回该向量。它不旋转 ENU 轴，不重复变换 body setpoint。
 
-新实体初始为 `alive=true`、Provider disabled、`generation=0`。`GET /entities` 返回真实 ID、generation 和 enabled 状态；读取不会启动或重置模型。Provider 生命周期由 Unix 管理接口控制，与 FS150 的 arm/mode 状态独立。
+新实体初始禁用，公开 EntityRef 使用正 generation。冻结实验按公开机器人 ID 建立实体对应关系，不从 namespace 猜测机器人身份。`GET /v1/entities/<id>` 读取实际 ref 和状态；状态修改必须携带此 ref 的 generation。`state.enabled` 只切换运行状态，reset 才重置模型，且不回退时钟。删除后重建的公开 generation 改变；旧 ref 被拒绝。
 
-- **Start**：inactive Provider 必须携带当前 generation 做 CAS；重建该实体初始模型、generation 加一并启用。已 active 时接受当前或前一代 generation，不重复重置模型。
-- **Stop**：要求当前 generation；禁用 Provider，generation 不变。FS150 继续最后电机状态的被动动力学，测量输出被门控；Scout/Mecanum 的适用速度输入归零，Scout 的延迟响应继续趋稳。再次 start 重置模型。
-- **Reset**：重建模型，清除控制器、滤波器和电机历史，恢复初始位姿，generation 加一；保持 enabled 状态，不回拨世界时间。全世界 reset 对采集的全部实体身份/generation 做 CAS 后原子应用。
-- **Remove**：要求当前 generation；从世界移除实体，置 dead/disabled，退休其 IO 和传感器资源；成功删除回执中的 `enabled` 为 `false`。
-
-Pause 冻结物理时间，仍执行管理和服务。Step 只在 paused 且没有未完成 step 时接受正整数步数，完成指定数量的全世界步后仍保持 paused。
 
 ## ROS 话题与服务
 
@@ -146,7 +140,7 @@ IMU 的 frame 为 `body_frame`，轴为前/左/上，gyro 单位 rad/s，linear_
 
 值须为有限的 `0..1000` Hz，正频率的周期必须能表示为整数 ns；`0` 关闭该组的周期发布，话题仍保留。发布使用共同世界 epoch 相位的整数 deadline，不补发错过的旧样本。每组实际周期发布上限受输出快照频率约束；默认 `output_period_ns=8000000` 对应理论上限 `125` Hz。世界或输出线程落后时，实际可用快照频率还会降低；请求频率与理论 cap 不代表接收者实际收到的频率。
 
-暂停时不重复发布冻结的数值测量。新 generation 或时间戳回退会重置发布 deadline；Provider/FCU 状态或落地状态变化会立即发布相应状态组，`state` 和 `extended_state` 设为 `0` 时也保留变化通知。运行时可通过 `POST /telemetry-rates` 修改全群频率，下一个处理的 Frame 使用同一份新设置。
+暂停时不重复发布冻结的数值测量。新 generation 或时间戳回退会重置发布 deadline；Provider/FCU 状态或落地状态变化会立即发布相应状态组，`state` 和 `extended_state` 设为 `0` 时也保留变化通知。频率由原生配置中的 `telemetry_rates_hz` 指定。
 
 ### FS150 服务
 
@@ -177,55 +171,20 @@ Provider 和 reset 使用 Unix 管理接口；`ros.provider_service`、`ros.trut
 
 ## Unix HTTP/JSON 管理接口
 
-管理接口不承载机器人 pose/velocity stream；机器人控制和遥测通过 ROS。
+宿主使用共享 XRPC HTTP 与 BootstrapInput。`GET /v1/describe` 返回真实 ServiceRef；后续请求通过共享 SDK 的 instance、request ID 和 timeout 头绑定本次进程。进程退出后该 incarnation 失效。
 
-| 请求 | 额外字段 | 含义 |
-|---|---|---|
-| `GET /capabilities` | — | RPC 版本、机器人类型、已编译 ROS/GPU 能力、传感器模式、遥测组、端点方法和接口限制 |
-| `GET /config` | — | 已解析的只读世界配置和当前全群遥测设置 |
-| `GET /status` | — | instance、steps、simulation time、pause、墙钟累计 RTF、活动期间 realtime_rtf、自适应周期/实际 dt、lag、步延迟、input/output misses 和 sensor 状态 |
-| `GET /entities` | — | `instance_id` 和真实 numeric ID/generation、name/kind/enabled |
-| `GET /telemetry-rates` | — | 全群 requested rates、输出快照周期和各组理论频率上限 |
-| `POST /telemetry-rates` | `rates_hz` | 部分更新全群遥测频率；同步返回 applied 回执 |
-| `POST /entities` | `entity` | 添加机器人，实体对象与配置文件相同 |
-| `DELETE /entities/<id>` | `generation` | 移除指定实体 |
-| `POST /entities/<id>/provider` | `generation`、`action: "start"` 或 `"stop"` | 控制指定实体的 Provider |
-| `POST /pause` | — | 暂停世界 |
-| `POST /resume` | — | 恢复世界 |
-| `POST /step` | `steps`，默认 1 | paused 世界前进指定步数 |
-| `POST /reset` | 可选 `entity_id` 和 `generation` | 重置指定实体；不提供实体 ID 时重置世界 |
-| `GET /requests/<request_id>` | — | 查询 mutation 回执 |
+| 路径 | 用途 |
+| --- | --- |
+| `GET /v1/health`、`POST /v1/health/observe` | 原生组件 ready 与 revision 等待 |
+| `GET /v1/world` | 世界时间、步数、实体与原生诊断 |
+| `GET /v1/entities`、`GET /v1/entities/<id>` | 公开实体身份及状态 |
+| `POST /v1/entities`、`DELETE /v1/entities/<id>` | 创建、删除实体 |
+| `POST /v1/entities/<id>/state` | `{generation, state:{enabled}}` |
+| `POST /v1/entities/<id>/reset` | 携带 generation 重置实体 |
+| `POST /v1/world/{pause,resume,step,reset}` | 世界管理；reset 不回退时间 |
+| `GET /v1/operations/<id>`、`POST /v1/operations/<id>/{wait,cancel}` | 精确操作回执、等待和取消 |
 
-`GET /capabilities` 返回 `instance_id`、`rpc_version: 1`、`ros`、`gpu`、`robot_kinds`、`sensor_modes`、`telemetry_groups`、`limits` 和 `endpoints`。`ros` 和 `gpu` 表示该服务器是否具备已编译的相应边界；`robot_kinds` 为 `fs150`、`scout`、`mecanum`。`sensor_modes.cpu` 为 `raycast`、`penetrating`、`depth`；GPU 已编译时 `sensor_modes.gpu` 为 `lidar_scan`，否则为空数组。`telemetry_groups` 列出上表七组名称；`endpoints` 是由 `path` 和 `methods` 组成的对象数组。`limits` 包含 `request_bytes: 1048576`、`client_timeout_ms: 5000`、`receipt_ttl_ms: 300000`、`request_id_length: 128` 和 `telemetry_rate_max_hz: 1000`。
-
-`GET /config` 返回 `instance_id`、`world`、`telemetry` 和 `localization_pose_topics`。后者为当前 alive 实体实际 ROS IO 已 advertise 的 resolved pose topic 字符串数组，包含显式 topic override 和 ROS remap；数组不保证实体顺序，headless 构建返回 `[]`。`world` 包含已解析的 `epoch_ns`、`model_step_ns`、`output_period_ns`、`input_poll_ns`、`max_model_step_ns`、`catchup_batch`、`sensor_workers`、`publish_workers`、`publish_clock`；`telemetry` 与 `GET /telemetry-rates` 的返回对象相同，反映当前设置。
-
-所有 mutation 的 JSON body 必须包含匹配的 `instance_id` 和符合 `[A-Za-z0-9_.:-]{1,128}` 的 `request_id`。可选 `timeout_ms` 为整数 1..5000，默认 1500。`generation`、`entity_id`、`steps` 和 `timeout_ms` 均只接受 JSON 整数，不接受浮点数、布尔值或字符串；`generation` 和 `entity_id` 须非负，`steps` 须为正。不带 `entity_id` 的世界 reset 不接受 `generation`。世界管理命令的 `202` 表示 accepted，须查询回执确认执行结果。
-
-`GET /telemetry-rates` 返回 `requested_rates_hz`、`snapshot_period_ns`、`snapshot_cap_hz` 和 `effective_cap_hz`；后者为各请求频率与快照理论上限的较小值。`POST /telemetry-rates` 的 `rates_hz` 对象只更新给出的键，不认识的键或无效频率被拒绝。更新不推进物理时钟，暂停期间也可执行；`200` 和 `phase: applied` 表示设置已经替换，发布从下一个处理的 Frame 使用新值。回执中的 `result.requested_rates_hz` 固定为该请求应用时的设置，之后其他更新不会修改旧回执。它与其他 mutation 共用 request ID 的幂等和冲突规则。
-
-回执 `phase` 为 `accepted`、`executing`、`applied`、`cancelled` 或 `failed`。`applied` 表示命令已执行，还须检查 `result.success`。世界命令的 `applied` / `failed` 结果携带 `applied`、`success`、数字 `reason`、`entity_id`、`generation`、`enabled`、`step` 和 `simulation_time_ns`；遥测频率更新结果携带 `applied`、`success` 和 `requested_rates_hz`。准备资源失败返回 `phase: failed`、`result.applied: false` 和顶层 `error`。`cancelled` 的结果仅为 `applied: false`、`success: false` 和字符串 `reason: "deadline before execution"`。
-
-| 世界命令 `applied` / `failed` 的 `result.reason` | 含义 |
-|---|---|
-| `0` | 成功 |
-| `1` | 过期身份 / generation |
-| `2` | 拒绝或无效输入 |
-| `3` | 不支持的操作 |
-| `4` | 重复实体名称 |
-| `5` | 执行 / 资源错误 |
-
-未执行且超过 deadline 的请求为 `cancelled`。同一个 request ID 和相同 payload 返回同一回执；复用 ID 携带不同 payload 返回 `409`。实例身份不匹配也返回 `409`。回执从请求进入 `applied`、`cancelled` 或 `failed` 终态后保留五分钟，监督者不得重放已经过期的 mutation ID。
-
-支持 HTTP/1.0、HTTP/1.1、`Content-Length` 和每连接一次请求；不支持 chunked request。`Content-Length` 去除首尾空白后须为非空的十进制 ASCII 数字串，不接受重复该 header。管理 JSON 上限为 1 MiB，任意嵌套对象的重复 JSON 字段均被拒绝；慢连接通过 nonblocking poll 处理。未知路径返回 `404`；已知路径使用不支持的方法返回 `405`、`Allow` header 和 JSON `allowed_methods`。Mutation body 须为对象，只接受公共字段与该接口声明的顶层字段；未知顶层字段、重复 JSON 字段及上述格式或类型错误返回 `400`。
-
-```sh
-curl --unix-socket /private/world.sock http://localhost/status
-curl --unix-socket /private/world.sock -H 'Content-Type: application/json' \
-  -d '{"instance_id":"example-session-world","request_id":"pause-1"}' \
-  http://localhost/pause
-curl --unix-socket /private/world.sock http://localhost/requests/pause-1
-```
+变更返回的 accepted/running 不等于完成。调用方等待终态并检查实际结果；启用不等于 Arm，取消也不抹掉已执行的物理效果。请求在固定两个冷准备 worker 之外不创建每机器人线程；运行目录和 HTTP 端点租约在原生工作停止后释放。
 
 ## ECS 数据与执行流
 
@@ -233,7 +192,7 @@ curl --unix-socket /private/world.sock http://localhost/requests/pause-1
 
 按机器人种类分组的 dense array 和权威 body/planar SoA 列共享稳定 ID 映射。Controller/filter 状态采用连续 AoS，name/config/ROS handles 为低频数据。Remove 将该类最后一个 dense 元素移入空位并重新绑定索引。Entity 持有 IO 和可选 sensor 资源，快照仅弱引用 Entity，已移除资源不会被快照延长寿命。
 
-ROS 和 HTTP 通过同一个边界命令执行器修改世界。Add 在 world thread 外准备模型、ROS endpoints 和 sensor 资源；Provider start 在 world thread 外准备初始模型，再提交到 world boundary。GPU 初始化与静态地图上传在 GPU owner 上完成后才提交 add。
+ROS 和 HTTP 通过同一个边界命令执行器修改世界。Add 在 world thread 外准备模型、ROS endpoints 和 sensor 资源；Reset 在 world thread 外准备初始模型，再提交到 world boundary。GPU 初始化与静态地图上传在 GPU owner 上完成后才提交 add。
 
 动力学、控制器与滤波器只接收共享的实际 dt，不读取操作系统时钟。Flight 控制每次更新一次，刚体保持 ≤2 ms 的安全 RK4 子步；平面接地仍在整个调用区间端点约束。增大世界步长减少控制更新，但不能消除刚体数值子步；本模型不提供复杂接触/碰撞保证。
 
@@ -281,6 +240,6 @@ GPU kernel 的两个轴共用 `polar_res`，要求 `h_fov_deg / h_res == v_fov_d
 
 每个 sensor 预建 4 个 payload 缓冲，计算时只写无人持有的缓冲，缓存、完成样本和发布者共享不可变数据；池满时丢弃采样。无噪声 CPU 观察仅在 sensor pose 和所观测 body 几何完全相同且 generation 未变时复用缓存，命中不复制点云/beam 字节；有噪声或运动会重新计算。静态场景索引、CPU 缓冲和 GPU 地图/context 复用。扫描完成后释放 body Frame，缓存不长期占用世界快照。发布保留采样 stamp，丢弃移除、disabled 或过期 generation 的结果。内存随配置实体、beam patterns、输出与几何缓存缓冲和共享场景增长。
 
-`/status` 的 `simulation_time_ns` 是已经积分的时间，`model_step_ns` 是名义周期，`scheduling_period_ns` 是当前调度周期，`last_dt_ns` 是最近实际积分间隔。`rtf` 为自进程起点的累计比值（包含暂停和手动 Step）；`realtime_rtf` 只计算自动运行的积分时间 / 活动墙钟时间。`frame_slots` 与 `frame_array_grows` 报告快照池及数组成长；Sensor 分别报告 requested/effective/source/observed rate、throttled samples、misses、cache hits、实际计算次数、payload 槽位/成长/丢弃。
+`GET /v1/world` 的原生 diagnostics 中 `simulation_time_ns` 是已经积分的时间，`model_step_ns` 是名义周期，`scheduling_period_ns` 是当前调度周期，`last_dt_ns` 是最近实际积分间隔。`rtf` 为自进程起点的累计比值（包含暂停和手动 Step）；`realtime_rtf` 只计算自动运行的积分时间 / 活动墙钟时间。`frame_slots` 与 `frame_array_grows` 报告快照池及数组成长；Sensor 分别报告 requested/effective/source/observed rate、throttled samples、misses、cache hits、实际计算次数、payload 槽位/成长/丢弃。
 
 `publication` 报告分片数、快照合并、准备耗时与错误，以及 telemetry/cloud/clock 的交接次数、估计字节、缓冲分配/容量/丢弃、序列化和队列交接耗时。`accepted` 是进入 ROS 发布队列，不是订阅者接收确认；`backpressure_ns` 是拒绝交接时所观察缓冲年龄的累计值，不是阻塞时间。

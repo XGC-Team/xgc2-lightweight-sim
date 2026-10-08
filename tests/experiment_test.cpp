@@ -64,5 +64,58 @@ int main(int argc, char **argv) {
     try { (void)xsim::experiment_config(modified); } catch (const std::exception &) { refused = true; }
     assert(refused);
   }
+  const auto frozen_before = original.dump();
+  const auto config_before = xsim::experiment_config(original).dump();
+  const xsim::Json expected_bindings{{"ugv1", "scout-1"}, {"uav1", "px4-1"},
+    {"uav2", "px4-2"}, {"mecanum1", "mecanum-1"}};
+  assert(xsim::experiment_robot_bindings(original) == expected_bindings);
+  assert(original.dump() == frozen_before);
+  assert(xsim::experiment_config(original).dump() == config_before);
+
+  auto explicit_identity = original;
+  explicit_identity["robots"][0]["id"] = "Robot:Case_01.rev-2";
+  const auto identities = xsim::experiment_robot_bindings(explicit_identity);
+  assert(identities.at("ugv1") == "Robot:Case_01.rev-2");
+  assert(!identities.contains("Robot:Case_01.rev-2"));
+  assert(xsim::experiment_config(explicit_identity).dump() == config_before);
+  explicit_identity["robots"][0]["id"] = std::string(128, 'a');
+  assert(xsim::experiment_robot_bindings(explicit_identity).at("ugv1") == std::string(128, 'a'));
+
+  const auto reject_binding = [](const xsim::Json &input) {
+    bool refused = false;
+    try { (void)xsim::experiment_robot_bindings(input); }
+    catch (const std::exception &) { refused = true; }
+    assert(refused);
+  };
+  for (const auto &invalid : xsim::Json::array({nullptr, 42, "", "robot/name", "robot name", "robot\nname", "机器人", std::string(129, 'a')})) {
+    auto modified = original; modified["robots"][0]["id"] = invalid;
+    reject_binding(modified);
+  }
+  auto missing_id = original; missing_id["robots"][0].erase("id");
+  reject_binding(missing_id);
+  auto duplicate_id = original; duplicate_id["robots"][1]["id"] = duplicate_id["robots"][0]["id"];
+  reject_binding(duplicate_id);
+  auto duplicate_name = original; duplicate_name["robots"][1]["namespace"] = duplicate_name["robots"][0]["namespace"];
+  reject_binding(duplicate_name);
+  for (const char *invalid : {"", "ugv1", "/1bad", "/two/segments"}) {
+    auto modified = original; modified["robots"][0]["namespace"] = invalid;
+    reject_binding(modified);
+  }
+  auto hybrid = xsim::load_json_object(root + "/hybrid-filter-physical-sensor.input.json");
+  const xsim::Json hybrid_bindings{{"ugv1", "scout-1"}, {"mecanum1", "mecanum-1"}};
+  assert(xsim::experiment_robot_bindings(hybrid) == hybrid_bindings);
+  // Physical members are outside this world's identity map and are not repaired.
+  hybrid["robots"][1].erase("id");
+  hybrid["robots"][1].erase("namespace");
+  assert(xsim::experiment_robot_bindings(hybrid) == hybrid_bindings);
+  auto invalid_source = hybrid; invalid_source["robots"][0]["hybridSource"] = "unknown";
+  reject_binding(invalid_source);
+  auto invalid_mode = original; invalid_mode["context"]["runMode"] = "unknown";
+  reject_binding(invalid_mode);
+  const auto simulation_physical = xsim::load_json_object(root + "/simulation-retains-physical-hybrid-flags.input.json");
+  assert(xsim::experiment_robot_bindings(simulation_physical) == expected_bindings);
+  auto empty = original; empty["robots"] = xsim::Json::array();
+  assert(xsim::experiment_robot_bindings(empty) == xsim::Json::object());
   std::cout << cases.size() << " original Go fixtures (noWorld retained as a direct-bootstrap refusal) and strict frozen-fact negative controls passed\n";
+  std::cout << "frozen public robot identities, hybrid filtering and unchanged scientific config passed\n";
 }

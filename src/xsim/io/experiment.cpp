@@ -21,6 +21,12 @@ bool ros_name(const std::string &value, bool allow_segments) {
   }
   return true;
 }
+bool simulated_robot(const Json &robot, const std::string &run_mode) {
+  if (run_mode != "hybrid") return true;
+  const auto source = text(robot, "hybridSource");
+  require(source == "simulation" || source == "physical", "invalid Hybrid source");
+  return source == "simulation";
+}
 double number(const Json &v) {
   require(v.is_number(), "expected a finite number");
   const auto n = v.get<double>();
@@ -181,11 +187,7 @@ Json experiment_config(const Json &input) {
     {"input_poll_ns", poll}, {"publish_clock", true}, {"scene", Json::object()}, {"entities", Json::array()}};
   std::set<std::string> names;
   for (const auto &robot : robots) {
-    if (run_mode == "hybrid") {
-      const auto source = text(robot, "hybridSource");
-      require(source == "simulation" || source == "physical", "invalid Hybrid source");
-      if (source != "simulation") continue;
-    }
+    if (!simulated_robot(robot, run_mode)) continue;
     const auto ns = text(robot, "namespace");
     require(ros_name(ns, false), "namespace must be one absolute ROS segment");
     const auto body = ns.substr(1);
@@ -228,6 +230,27 @@ Json experiment_config(const Json &input) {
   }
   if (reference_requested(context.at("visualizationTopics"))) config["reference_cloud_topic"] = "/xgc/scene/reference_cloud";
   return config;
+}
+Json experiment_robot_bindings(const Json &input) {
+  require(input.is_object(), "bootstrap must be one object");
+  const auto run_mode = text(input.at("context"), "runMode");
+  require(run_mode == "simulation" || run_mode == "hybrid", "unsupported runMode");
+  const auto &robots = input.at("robots");
+  require(robots.is_array() && robots.size() <= 256, "robots must be the frozen roster");
+  Json bindings = Json::object();
+  std::set<std::string> ids;
+  for (const auto &robot : robots) {
+    if (!simulated_robot(robot, run_mode)) continue;
+    const auto ns = text(robot, "namespace");
+    require(ros_name(ns, false), "namespace must be one absolute ROS segment");
+    const auto id = text(robot, "id");
+    require(!id.empty() && id.size() <= 128 &&
+      id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-") == std::string::npos,
+      "robot ID requires 1..128 ASCII letters, digits or . _ : -");
+    require(ids.insert(id).second, "duplicate robot ID");
+    require(bindings.emplace(ns.substr(1), id).second, "duplicate entity namespace");
+  }
+  return bindings;
 }
 Json load_experiment_config(const std::string &path, const std::string &scene_file) {
   return resolve_scene_file(experiment_config(load_json_object(path)), scene_file);

@@ -2,6 +2,7 @@
 #include "commands.hpp"
 #include "physics_clock.hpp"
 #include <deque>
+#include <exception>
 #include <functional>
 #include <list>
 #include <thread>
@@ -24,7 +25,7 @@ public:
   static constexpr size_t frame_pool_size = 16;
   bool take_frame(std::shared_ptr<const Frame> &); // immutable shared output
   bool take_frame(Frame &); // fixture-only copy, outside the output lock
-  void start();
+  void start(); // returns after the first native boundary and output snapshot
   void stop();
   Metrics metrics;
   const int64_t epoch, dt, output_period;
@@ -69,7 +70,10 @@ private:
   std::atomic<bool> running_{false};
   std::thread thread_;
   std::condition_variable wake_;
+  std::condition_variable started_wake_;
   std::mutex wake_mutex_;
+  bool started_ = false;
+  std::exception_ptr startup_error_;
   State state(uint64_t, const Slot &) const;
   Result apply(Command &);
   void reset(Slot &, Model &&);
@@ -77,6 +81,7 @@ private:
   void observe_geometry(Frame &);
   void emit();
   void finish(const Ticket &, Result);
+  void cancel_pending_controls(Key);
   void run();
 };
 } // namespace xsim
