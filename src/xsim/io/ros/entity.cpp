@@ -129,15 +129,21 @@ void RosEntity::reconcile() {
   if (bound_generation == gen && bound_enabled == enabled &&
       bound_alive == e->alive)
     return;
+  // Enablement changes input admission, not this generation's service
+  // endpoint. Re-advertising here disconnects persistent ROS clients that
+  // connected while the entity was disabled.
+  const bool keep_services = bound_generation == gen && bound_alive && e->alive;
   bound_generation = gen;
   bound_enabled = enabled;
   bound_alive = e->alive;
   pva_sub.shutdown();
   attitude_sub.shutdown();
   velocity_sub.shutdown();
-  arm.shutdown();
-  mode.shutdown();
-  command.shutdown();
+  if (!keep_services) {
+    arm.shutdown();
+    mode.shutdown();
+    command.shutdown();
+  }
   if (!e->alive)
     return;
   if (e->config.kind != Kind::FS150) {
@@ -208,6 +214,8 @@ void RosEntity::reconcile() {
           world.submit(t);
         });
   }
+  if (keep_services)
+    return;
   boost::function<bool(mavros_msgs::CommandBool::Request &,
                        mavros_msgs::CommandBool::Response &)>
       arm_fn = [weak = entity, gen, this](auto &req, auto &res) {
