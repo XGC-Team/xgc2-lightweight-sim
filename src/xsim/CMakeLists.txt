@@ -4,7 +4,7 @@ project(xsim LANGUAGES C CXX)
 include(GNUInstallDirs)
 set(XGC2_MATH_INCLUDE "/usr/include" CACHE PATH "Installed xgc2-math headers or explicit source include")
 set(EIGEN_INCLUDE "/usr/include/eigen3" CACHE PATH "Eigen headers")
-# The server consumes public robotics records; no runtime SDK or Host.
+# The model consumes neutral robotics records; XRPC is confined to the native IO boundary.
 find_package(XgcRoboticsInterfaces CONFIG REQUIRED)
 set(FS150_ASSET_SOURCE_ROOT "" CACHE PATH "Owning FS150 SITL asset source")
 if(NOT EXISTS "${FS150_ASSET_SOURCE_ROOT}/scripts/generate_native_flight_model.py")
@@ -113,7 +113,7 @@ install(FILES ../../README.md DESTINATION ${CMAKE_INSTALL_DATADIR}/xsim)
 install(DIRECTORY ../../docs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/xsim/docs)
 install(FILES models/px4_v1_12_3/upstream/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/xsim/licenses RENAME PX4-LICENSE)
 set(CPACK_PACKAGE_NAME "xsim")
-set(CPACK_PACKAGE_VERSION "1.0.2")
+set(CPACK_PACKAGE_VERSION "1.1.0")
 set(CPACK_GENERATOR "TGZ")
 include(CPack)
 

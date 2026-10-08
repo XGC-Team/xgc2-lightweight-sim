@@ -54,7 +54,7 @@ if [[ -n "${XGC2_APT_OVERLAY_URL:-}" && "${XGC2_DEPENDENCY_SET_DIGEST}" != 4f53c
   echo "deb [signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] ${XGC2_APT_OVERLAY_URL%/} focal main" >/etc/apt/sources.list.d/00-xgc2-release-train.list
 fi
 apt-get update
-apt-get install -y --no-install-recommends libxgc2-math-dev libxgc2-robotics-interfaces-dev
+apt-get install -y --no-install-recommends libxgc2-math-dev libxgc2-robotics-interfaces-dev libxgc2-xrpc-dev
 python3 /source/.xgc2/scripts/check_build_inputs.py
 if [[ "$XSIM_NATIVE_CONTRACTS" == true ]]; then
   bash /source/.xgc2/scripts/check_native_contracts.sh /sensors /source/.xgc2/build-inputs/fs150

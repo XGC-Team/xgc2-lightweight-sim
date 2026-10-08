@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xsim
 name: xsim
-version: 1.0.2-2
+version: 1.1.0-1
 kind: ros1-apt
 summary: Standalone ECS world with original FS150/Scout/Mecanum ROS interfaces and integrated CPU/GPU sensing.
 ros:
@@ -11,11 +11,11 @@ apt:
   distribution: focal
   install: [xsim]
   packages: [xsim]
-  depends: [ros-noetic-roscpp, ros-noetic-mavros-msgs, ros-noetic-rosgraph-msgs, libglfw3]
+  depends: [ros-noetic-roscpp, ros-noetic-mavros-msgs, ros-noetic-rosgraph-msgs, libglfw3, libxgc2-xrpc1]
 usage:
   install: sudo apt install xsim
   smoke_test: /opt/xgc2/xsim/bin/xsim --help
-  notes: Source Noetic before direct CLI use. One desired world JSON supplies the actual Session epoch; one Unix control socket serves management. GPU has no CPU fallback. The sensor implementation is built from the explicit convex_geometry checkout, never copied into this owner.
+  notes: Source Noetic before direct CLI use. One frozen Experiment supplies the actual Session epoch; one explicit shared bootstrap supplies the private native RPC binding. GPU has no CPU fallback. The sensor implementation is built from the explicit convex_geometry checkout, never copied into this owner.
 ownership:
   paths:
   - /opt/xgc2/xsim
@@ -24,9 +24,10 @@ release:
   ref: main
   workflow: release.yml
   ci_workflow: ci.yml
-  requires: [libxgc2-math-dev, libxgc2-robotics-interfaces-dev]
+  requires: [libxgc2-math-dev, libxgc2-robotics-interfaces-dev, libxgc2-xrpc-dev]
   dependency_policy:
+    libxgc2-xrpc-dev: rebuild
     libxgc2-math-dev: verify
     libxgc2-robotics-interfaces-dev: rebuild
   apt_versions:
-    focal: 1.0.2-2
+    focal: 1.1.0-1
