@@ -11,6 +11,7 @@ struct EntityIO {
   std::function<void()> reconcile;
   std::function<void(const State &, const TelemetryRates &)> publish;
   std::function<bool()> publish_sensor;
+  const std::string localization_pose_topic{};
 };
 
 // Main composes the optional ROS boundary. Empty hooks give the same native

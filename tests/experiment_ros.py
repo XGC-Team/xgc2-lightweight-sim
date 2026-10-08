@@ -55,8 +55,8 @@ def main():
         from rosgraph_msgs.msg import Clock
         rospy.init_node('xsim_experiment_fixture', disable_signals=True)
         fixture = Path(__file__).parent / 'experiment-fixtures'
-        bootstrap = json.loads((fixture / 'default-mixed.input.json').read_text())
-        expected = json.loads((fixture / 'default-mixed.expected-config.json').read_text())
+        bootstrap = json.loads((fixture / 'explicit-timing-fcu-custom-topics-reference.input.json').read_text())
+        expected = json.loads((fixture / 'explicit-timing-fcu-custom-topics-reference.expected-config.json').read_text())
         bootstrap['context']['simulation']['rosMasterUri'] = os.environ['ROS_MASTER_URI']
         filename = root / 'experiment.json'
         filename.write_text(json.dumps(bootstrap))
@@ -79,6 +79,8 @@ def main():
         assert configured['instance_id'] == bootstrap['instanceId']
         for key in ('epoch_ns', 'model_step_ns', 'output_period_ns', 'input_poll_ns', 'publish_clock'):
             assert configured['world'][key] == expected[key], (key, configured)
+        pose_topics = [entity['ros']['localization_pose_topic'] for entity in expected['entities']]
+        assert sorted(configured['localization_pose_topics']) == sorted(pose_topics), configured
         serial = 0
 
         def mutate(path, **body):
@@ -125,21 +127,31 @@ def main():
                 ground.append(name)
         epoch_ns = int(bootstrap['epochNs'])
         until(lambda: sample('clock') and sample('clock').clock.to_nsec() >= epoch_ns, 'actual /clock')
+        # A physics Pause need not coincide with an output/localization deadline.
+        # First prove genuine messages arrived while the world was advancing.
+        for name in providers:
+            until(lambda: sample(name) and sample(name).header.stamp.to_nsec() >= epoch_ns,
+                  name + ' actual localization before Pause')
         mutate('/pause')
         stamp = get('/status')['simulation_time_ns']
         report = {'epochNs': epoch_ns, 'instanceId': bootstrap['instanceId'], 'configurationExact': True,
-                  'models': {}, 'privateMaster': os.environ['ROS_MASTER_URI']}
+                  'models': {}, 'privateMaster': os.environ['ROS_MASTER_URI'],
+                  'localizationPoseTopics': configured['localization_pose_topics'],
+                  'pausedPhysicsStampNs': stamp, 'actualClockStampNs': sample('clock').clock.to_nsec()}
         for entity in expected['entities']:
             name = entity['name']
-            pose = until(lambda: sample(name) if sample(name) and sample(name).header.stamp.to_nsec() == stamp else None,
+            pose = until(lambda: sample(name) if sample(name) and epoch_ns <= sample(name).header.stamp.to_nsec() <= stamp else None,
                          name + ' actual localization')
             position = [pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]
             assert max(abs(a - b) for a, b in zip(position, entity['position'])) < 8e-7 + 1e-12
             report['models'][name] = {'pose': position, 'stampNs': pose.header.stamp.to_nsec(),
-                                     'providerGeneration': 1, 'kind': entity['kind']}
+                                     'providerGeneration': 1, 'kind': entity['kind'],
+                                     'pausedPoseLagNs': stamp - pose.header.stamp.to_nsec()}
         state = master.getSystemState('/xsim_experiment_fixture')
         assert state[0] == 1
-        report['graph'] = assert_retired_ros_surfaces_absent(state[2], providers, ground)
+        report['graph'] = assert_retired_ros_surfaces_absent(state[2], providers, ground,
+            {entity['name']: {'pose': entity['ros']['localization_pose_topic'],
+                             'twist': entity['ros']['localization_twist_topic']} for entity in expected['entities']})
         publishers = [rospy.Publisher('/' + name + '/cmd_vel', Twist, queue_size=1) for name in ground]
         for publisher in publishers:
             until(lambda: publisher.get_num_connections() > 0, 'original ground command subscriber')
@@ -153,10 +165,12 @@ def main():
             if entity['name'] not in ground:
                 continue
             name = entity['name']
-            pose = until(lambda: sample(name) if sample(name) and sample(name).header.stamp.to_nsec() == stepped else None,
+            pose = until(lambda: sample(name) if sample(name) and stepped - 3 * expected['output_period_ns'] <= sample(name).header.stamp.to_nsec() <= stepped else None,
                          name + ' stepped actual localization')
             assert pose.pose.position.x > entity['position'][0] + .01
             report['models'][name]['afterCommandPose'] = [pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]
+            report['models'][name]['afterCommandPoseStampNs'] = pose.header.stamp.to_nsec()
+            report['models'][name]['stepPoseLagNs'] = stepped - pose.header.stamp.to_nsec()
         for name, provider in providers.items():
             stopped = provider.stop(provider.read()['generation'])
             assert stopped['success'] and not stopped['enabled']

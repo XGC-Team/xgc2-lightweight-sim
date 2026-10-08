@@ -68,6 +68,7 @@ def main(binary):
                 assert response.status == 200
                 value = json.loads(response.read())
                 assert value["world"]["epoch_ns"] == original["epoch_ns"], value
+                assert value["localization_pose_topics"] == [], value
             finally:
                 connection.close()
             return process

@@ -369,9 +369,16 @@ Json Server::route(const std::string &method, const std::string &path,
     return {{"error", "method not allowed"}, {"allowed_methods", allowed}};
   }
   if (method == "GET" && path == "/capabilities") return capabilities();
-  if (method == "GET" && path == "/config")
+  if (method == "GET" && path == "/config") {
+    Json pose_topics = Json::array();
+    for (const auto &state : snapshot->states)
+      if (auto entity = state.entity.lock(); entity && entity->alive && entity->io &&
+          !entity->io->localization_pose_topic.empty())
+        pose_topics.push_back(entity->io->localization_pose_topic);
     return {{"instance_id", instance_}, {"world", world_configuration_},
+            {"localization_pose_topics", pose_topics},
             {"telemetry", telemetry_rates()}};
+  }
   if (method == "GET" && path == "/status")
     return status();
   if (method == "GET" && path == "/telemetry-rates")

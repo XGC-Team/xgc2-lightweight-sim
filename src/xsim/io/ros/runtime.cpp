@@ -157,6 +157,7 @@ RuntimeIO make_ros_io(const Json &config, World &world, Sensors &sensors) {
       [ros] { ros->reconcile(); },
       [ros](const State &state, const TelemetryRates &rates) { ros->publish(state, rates); },
       [ros] { return ros->publish_sensor(); },
+      ros->localization_pose_topic,
     });
   };
   io.poll_inputs = [runtime] { runtime->inputs.callAvailable(ros::WallDuration(0)); };

@@ -1,7 +1,6 @@
 #include "config.hpp"
 #include <charconv>
 #include <limits>
-#include <regex>
 #include <set>
 
 namespace xsim {
@@ -10,6 +9,18 @@ void require(bool valid, const std::string &message) {
   if (!valid) throw std::invalid_argument("experiment: " + message);
 }
 std::string text(const Json &j, const char *key) { return j.at(key).get<std::string>(); }
+bool ros_alpha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+bool ros_tail(char c) { return ros_alpha(c) || (c >= '0' && c <= '9') || c == '_'; }
+// Linear scanning also bounds stack use for documents near the input byte limit.
+bool ros_name(const std::string &value, bool allow_segments) {
+  if (value.size() < 2 || value[0] != '/' || !ros_alpha(value[1])) return false;
+  for (std::size_t i = 2; i < value.size(); ++i) {
+    if (value[i] == '/' && allow_segments) {
+      if (++i == value.size() || !ros_alpha(value[i])) return false;
+    } else if (!ros_tail(value[i])) return false;
+  }
+  return true;
+}
 double number(const Json &v) {
   require(v.is_number(), "expected a finite number");
   const auto n = v.get<double>();
@@ -62,7 +73,11 @@ bool reference_requested(const Json &groups) {
   return false;
 }
 Json sensor(const Json &authored, const std::string &ns, const std::string &backend) {
-  require(authored.is_object() && authored.contains("simpleLidar"), "authoredSimulationSensors.simpleLidar is required");
+  require(authored.is_object(), "authoredSimulationSensors must be an object");
+  // Canonical frozen omission means no authored sensor opt-in. This explicit
+  // empty raw fact is distinct from an absent bootstrap field (which fails).
+  if (authored.empty()) return nullptr;
+  require(authored.contains("simpleLidar"), "authoredSimulationSensors.simpleLidar is required");
   require(authored.size() == 1, "unknown authored simulation sensor field");
   const auto &raw = authored.at("simpleLidar");
   Json lidar = raw;
@@ -165,8 +180,6 @@ Json experiment_config(const Json &input) {
   Json config{{"instance_id", instance}, {"epoch_ns", epoch_ns}, {"model_step_ns", step}, {"output_period_ns", output},
     {"input_poll_ns", poll}, {"publish_clock", true}, {"scene", Json::object()}, {"entities", Json::array()}};
   std::set<std::string> names;
-  const std::regex body_pattern("^/[A-Za-z][A-Za-z0-9_]*$");
-  const std::regex topic_pattern("^/[A-Za-z][A-Za-z0-9_]*(/[A-Za-z][A-Za-z0-9_]*)*$");
   for (const auto &robot : robots) {
     if (run_mode == "hybrid") {
       const auto source = text(robot, "hybridSource");
@@ -174,7 +187,7 @@ Json experiment_config(const Json &input) {
       if (source != "simulation") continue;
     }
     const auto ns = text(robot, "namespace");
-    require(std::regex_match(ns, body_pattern), "namespace must be one absolute ROS segment");
+    require(ros_name(ns, false), "namespace must be one absolute ROS segment");
     const auto body = ns.substr(1);
     require(names.insert(body).second, "duplicate entity namespace");
     const auto kind = text(robot, "kind");
@@ -203,7 +216,7 @@ Json experiment_config(const Json &input) {
     const auto twist_topic = robot.value("simulationTwistTopic", std::string{});
     const auto resolved_pose = pose_topic.empty() ? ns + "/pose" : pose_topic;
     const auto resolved_twist = twist_topic.empty() ? ns + "/twist" : twist_topic;
-    require(std::regex_match(resolved_pose, topic_pattern) && std::regex_match(resolved_twist, topic_pattern), "invalid localization topic");
+    require(ros_name(resolved_pose, true) && ros_name(resolved_twist, true), "invalid localization topic");
     Json entity{{"name", body}, {"kind", model}, {"position", position}, {"yaw", yaw}, {"ros", Json{
       {"mocap_noise", Json::array({1e-7, 1e-7, 1e-7})}, {"mocap_seed", seed & 0x7fffffffu},
       {"localization_pose_topic", resolved_pose}, {"localization_twist_topic", resolved_twist}}}};

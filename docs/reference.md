@@ -198,7 +198,7 @@ Provider 和 reset 使用 Unix 管理接口；`ros.provider_service`、`ros.trut
 
 `GET /capabilities` 返回 `instance_id`、`rpc_version: 1`、`ros`、`gpu`、`robot_kinds`、`sensor_modes`、`telemetry_groups`、`limits` 和 `endpoints`。`ros` 和 `gpu` 表示该服务器是否具备已编译的相应边界；`robot_kinds` 为 `fs150`、`scout`、`mecanum`。`sensor_modes.cpu` 为 `raycast`、`penetrating`、`depth`；GPU 已编译时 `sensor_modes.gpu` 为 `lidar_scan`，否则为空数组。`telemetry_groups` 列出上表七组名称；`endpoints` 是由 `path` 和 `methods` 组成的对象数组。`limits` 包含 `request_bytes: 1048576`、`client_timeout_ms: 5000`、`receipt_ttl_ms: 300000`、`request_id_length: 128` 和 `telemetry_rate_max_hz: 1000`。
 
-`GET /config` 返回 `instance_id`、`world` 和 `telemetry`。`world` 包含已解析的 `epoch_ns`、`model_step_ns`、`output_period_ns`、`input_poll_ns`、`max_model_step_ns`、`catchup_batch`、`sensor_workers`、`publish_workers`、`publish_clock`；`telemetry` 与 `GET /telemetry-rates` 的返回对象相同，反映当前设置。
+`GET /config` 返回 `instance_id`、`world`、`telemetry` 和 `localization_pose_topics`。后者为当前 alive 实体实际 ROS IO 已 advertise 的 resolved pose topic 字符串数组，包含显式 topic override 和 ROS remap；数组不保证实体顺序，headless 构建返回 `[]`。`world` 包含已解析的 `epoch_ns`、`model_step_ns`、`output_period_ns`、`input_poll_ns`、`max_model_step_ns`、`catchup_batch`、`sensor_workers`、`publish_workers`、`publish_clock`；`telemetry` 与 `GET /telemetry-rates` 的返回对象相同，反映当前设置。
 
 所有 mutation 的 JSON body 必须包含匹配的 `instance_id` 和符合 `[A-Za-z0-9_.:-]{1,128}` 的 `request_id`。可选 `timeout_ms` 为整数 1..5000，默认 1500。`generation`、`entity_id`、`steps` 和 `timeout_ms` 均只接受 JSON 整数，不接受浮点数、布尔值或字符串；`generation` 和 `entity_id` 须非负，`steps` 须为正。不带 `entity_id` 的世界 reset 不接受 `generation`。世界管理命令的 `202` 表示 accepted，须查询回执确认执行结果。
 

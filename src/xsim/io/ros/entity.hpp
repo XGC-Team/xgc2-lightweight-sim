@@ -31,6 +31,7 @@ struct RosEntity {
   World &world;
   std::shared_ptr<void> runtime_owner;
   ros::NodeHandle input, services;
+  std::string localization_pose_topic; // assigned once from the actual advertisement
   BufferedPublisher localization_pose, localization_twist, pose, velocity, imu, raw_imu,
       state, extended, target, odom, cloud, beams;
   ros::Subscriber pva_sub, attitude_sub, velocity_sub;

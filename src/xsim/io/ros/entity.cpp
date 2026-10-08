@@ -63,8 +63,10 @@ RosEntity::RosEntity(const std::shared_ptr<Entity> &e, World &w,
     if (!noise.allFinite() || (noise.array() < 0).any())
       throw std::invalid_argument("invalid mocap noise");
   }
-  localization_pose.bind(input.advertise<geometry_msgs::PoseStamped>(
-      topic("localization_pose_topic", "/pose"), 1), telemetry_metrics);
+  auto pose_advertisement = input.advertise<geometry_msgs::PoseStamped>(
+      topic("localization_pose_topic", "/pose"), 1);
+  localization_pose_topic = pose_advertisement.getTopic();
+  localization_pose.bind(std::move(pose_advertisement), telemetry_metrics);
   localization_twist.bind(input.advertise<geometry_msgs::TwistStamped>(
       topic("localization_twist_topic", "/twist"), 1), telemetry_metrics);
   const bool flight = e->config.kind == Kind::FS150;

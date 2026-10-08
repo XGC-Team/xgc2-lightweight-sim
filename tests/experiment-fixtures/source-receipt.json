@@ -113,5 +113,11 @@
     "internal/xsimconfig/timing.go": "3e81510bddbcb5f22d2fd899bb58599d63e5d756c0b4b14f8971925841351ede",
     "internal/xsimconfig/fcu_parameters.go": "a26d1c9a3364149e0eb30c1fb4a9f342c59d3ad7b37fa993d7ba4dac76d1687c"
   },
-  "sourceNote": "Original Go scientific projector/config compiler stayed unchanged throughout capture. Public asset projection concurrently gained authoredSimulationSensors; final hash records exact final projection source. Cases mechanically set that raw field to the original RunRobotContext value, so no scientific defaults were recomputed."
+  "sourceNote": "Original Go scientific projector/config compiler stayed unchanged throughout capture. Public asset projection concurrently gained authoredSimulationSensors; final hash records exact final projection source. Cases mechanically set that raw field to the original RunRobotContext value, so no scientific defaults were recomputed.",
+  "captureState": "Captured Go worktree, not an assertion that sourceHead alone contains every file. Owning source SHA256 values identify the actual capture inputs.",
+  "indexFile": "index.json",
+  "indexSha256": "637a32d0199011323f79e7ca76e71070bcfd59648f1ce86b920d837e2ab311c8",
+  "manifestFile": "manifest.json",
+  "manifestMapping": "manifest.json is {cases: <the complete index.json array>} with no case reorder or semantic transformation.",
+  "manifestSha256": "501af0b2f9e1b670247abf86033078a93c7ac7c5f5b5dbc19366ea65840db23a"
 }

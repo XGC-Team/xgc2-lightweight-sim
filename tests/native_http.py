@@ -20,7 +20,7 @@ class UnixHTTP(http.client.HTTPConnection):
 _provider_requests = itertools.count(1)
 
 
-def assert_retired_ros_surfaces_absent(system_state, bodies, ground_bodies):
+def assert_retired_ros_surfaces_absent(system_state, bodies, ground_bodies, localization_topics=None):
     publishers, subscribers, services = system_state
     published = {name: set(nodes) for name, nodes in publishers}
     topics = set(published) | {name for name, _ in subscribers}
@@ -38,7 +38,8 @@ def assert_retired_ros_surfaces_absent(system_state, bodies, ground_bodies):
                    name.startswith('/xgc/lightweight/providers/') for name in service_names), service_names
     for body in bodies:
         for suffix in ('/pose', '/twist'):
-            assert published.get('/' + body + suffix) == {'/xsim'}, published
+            topic = (localization_topics or {}).get(body, {}).get(suffix[1:], '/' + body + suffix)
+            assert published.get(topic) == {'/xsim'}, published
     vrpn_topics = {'/vrpn_client_node/' + body + suffix for body in bodies
                    for suffix in ('/pose', '/twist', '/accel')}
     assert not topics & vrpn_topics, sorted(topics & vrpn_topics)
