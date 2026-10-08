@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-image="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.2@sha256:8b5059ac3ddab9355899f0e79783f2596ac9726e6bb108c055c74d0bc6c3da42}"
+image="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.3@sha256:ae96e0fdb5c0195a8328db8c5f8301994e085fbaaa5d54b7343bcc40db4eb234}"
 work="${WORK_DIR:-$root/.work/docker}";out="${OUTPUT_DIR:-$root/debs}";sensor="${XSIM_SENSOR_SOURCE_ROOT:-}"
 native_contracts=false
 while [[ $# -gt 0 ]]; do
