@@ -5,6 +5,7 @@
 #include <deque>
 #include <mutex>
 #include <poll.h>
+#include <sys/types.h>
 #include <thread>
 #include <unordered_map>
 namespace xsim {
@@ -43,6 +44,9 @@ private:
   struct BoundSocket {
     int fd = -1;
     std::string path;
+    dev_t device = 0;
+    ino_t inode = 0;
+    bool owns_path = false;
     ~BoundSocket();
   } socket_;
   std::vector<Client> clients_;

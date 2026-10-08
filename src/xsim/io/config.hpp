@@ -4,5 +4,5 @@
 namespace xsim {
 using Json = nlohmann::json;
 Config parse_entity(const Json &);
-Json load_config(const std::string &path);
+Json load_config(const std::string &path, const std::string &scene_file = "");
 } // namespace xsim

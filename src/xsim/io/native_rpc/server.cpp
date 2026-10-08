@@ -1,4 +1,5 @@
 #include "server.hpp"
+#include "io/startup.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <cctype>
@@ -75,6 +76,7 @@ Server::Server(const Json &config, const std::string &path, World &world,
     throw std::invalid_argument("instance_id required");
   if (path.size() >= sizeof(sockaddr_un::sun_path))
     throw std::invalid_argument("Unix socket path too long");
+  ensure_socket_parent(path);
   // Do not unlink somebody else's or a previous process's socket implicitly.
   socket_.fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (socket_.fd < 0)
@@ -88,7 +90,14 @@ Server::Server(const Json &config, const std::string &path, World &world,
     throw std::runtime_error("socket bind failed (path must be absent)");
   }
   socket_.path = path;
-  chmod(path.c_str(), 0600);
+  struct stat bound{};
+  if (lstat(path.c_str(), &bound) != 0 || !S_ISSOCK(bound.st_mode))
+    throw std::runtime_error("socket identity unavailable after bind");
+  socket_.device = bound.st_dev;
+  socket_.inode = bound.st_ino;
+  socket_.owns_path = true;
+  if (chmod(path.c_str(), 0600) != 0)
+    throw std::runtime_error("cannot restrict socket permissions");
   if (listen(socket_.fd, 32) < 0)
     throw std::runtime_error("socket listen failed");
   world_.metrics.paused = config.value("paused", false);
@@ -116,7 +125,10 @@ Server::Server(const Json &config, const std::string &path, World &world,
 
 Server::BoundSocket::~BoundSocket() {
   if (fd >= 0) close(fd);
-  if (!path.empty()) unlink(path.c_str());
+  struct stat current{};
+  if (owns_path && lstat(path.c_str(), &current) == 0 &&
+      S_ISSOCK(current.st_mode) && current.st_dev == device && current.st_ino == inode)
+    unlink(path.c_str());
 }
 
 Server::~Server() { shutdown(); }

@@ -10,7 +10,7 @@ def package(stage, output, dependencies):
     arch=subprocess.check_output(['dpkg','--print-architecture'],text=True).strip()
     control=stage/'DEBIAN';control.mkdir(exist_ok=True)
     (control/'control').write_text(f'''Package: xsim
-Version: 1.0.2-1
+Version: 1.0.2-2
 Architecture: {arch}
 Maintainer: XGC Team <dev@xgc.team>
 Depends: {dependencies}
