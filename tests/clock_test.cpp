@@ -50,8 +50,8 @@ OffsetRange input_offset(World &world) {
 }
 void resume_clock_regression(bool pause_in_boundary) {
   World world(1700000000000000000LL);
-  BoundaryGate first(world);
   world.start();
+  BoundaryGate first(world);
   first.wait();
   const auto original = input_offset(world);
   // Create a known wall-time debt while the gate prevents any integration.
