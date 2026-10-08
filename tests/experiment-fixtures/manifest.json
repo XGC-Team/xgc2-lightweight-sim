@@ -1,0 +1,370 @@
+{
+  "cases": [
+    {
+      "expectedConfig": "default-mixed.expected-config.json",
+      "input": "default-mixed.input.json",
+      "name": "default-mixed",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "empty-world.expected-config.json",
+      "input": "empty-world.input.json",
+      "name": "empty-world",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "explicit-timing-fcu-custom-topics-reference.expected-config.json",
+      "input": "explicit-timing-fcu-custom-topics-reference.input.json",
+      "name": "explicit-timing-fcu-custom-topics-reference",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "cpu-implicit-bridge.expected-config.json",
+      "input": "cpu-implicit-bridge.input.json",
+      "name": "cpu-implicit-bridge",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "cpu-bridge-preset.expected-config.json",
+      "input": "cpu-bridge-preset.input.json",
+      "name": "cpu-bridge-preset",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "cpu-zju-preset.expected-config.json",
+      "input": "cpu-zju-preset.input.json",
+      "name": "cpu-zju-preset",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "cpu-ego-v2-preset.expected-config.json",
+      "input": "cpu-ego-v2-preset.input.json",
+      "name": "cpu-ego-v2-preset",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "cpu-raycast-beams.expected-config.json",
+      "input": "cpu-raycast-beams.input.json",
+      "name": "cpu-raycast-beams",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "cpu-depth-beams.expected-config.json",
+      "input": "cpu-depth-beams.input.json",
+      "name": "cpu-depth-beams",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "cpu-bridge-overridden-raycast.expected-config.json",
+      "input": "cpu-bridge-overridden-raycast.input.json",
+      "name": "cpu-bridge-overridden-raycast",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "cpu-zju-overridden-depth.expected-config.json",
+      "input": "cpu-zju-overridden-depth.input.json",
+      "name": "cpu-zju-overridden-depth",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "cpu-explicit-sensor-values.expected-config.json",
+      "input": "cpu-explicit-sensor-values.input.json",
+      "name": "cpu-explicit-sensor-values",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "gpu-raycast.expected-config.json",
+      "input": "gpu-raycast.input.json",
+      "name": "gpu-raycast",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "gpu-penetrating.expected-config.json",
+      "input": "gpu-penetrating.input.json",
+      "name": "gpu-penetrating",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "gpu-depth_frustum.expected-config.json",
+      "input": "gpu-depth_frustum.input.json",
+      "name": "gpu-depth_frustum",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "hybrid-filter-physical-sensor.expected-config.json",
+      "input": "hybrid-filter-physical-sensor.input.json",
+      "name": "hybrid-filter-physical-sensor",
+      "runMode": "hybrid"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene parameter \"modelStepMs\" must be a whole number of milliseconds",
+      "input": "reject-zero-step.input.json",
+      "name": "reject-zero-step",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: modelStepMs must be whole milliseconds from 1 to 10",
+      "input": "reject-step-over-cap.input.json",
+      "name": "reject-step-over-cap",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene parameter \"outputPeriodMs\" must be a whole number of milliseconds",
+      "input": "reject-fractional-output.input.json",
+      "name": "reject-fractional-output",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene parameter \"commandPollMs\" must have a value",
+      "input": "reject-null-poll.input.json",
+      "name": "reject-null-poll",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene parameter \"outputPeriodMs\" must be a whole number of milliseconds",
+      "input": "reject-quoted-output.input.json",
+      "name": "reject-quoted-output",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene parameter \"typo\" is not an xsim parameter (allowed: commandPollMs, fcuParameters, modelStepMs, outputPeriodMs, pointCloudBackend)",
+      "input": "reject-unknown-scene-key.input.json",
+      "name": "reject-unknown-scene-key",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: pointCloudBackend must be cpu or gpu",
+      "input": "reject-backend-invalid.input.json",
+      "name": "reject-backend-invalid",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene fcuParameters must be a numeric object",
+      "input": "reject-fcu-null.input.json",
+      "name": "reject-fcu-null",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: unsupported FCU parameter \"unknown_parameter\"",
+      "input": "reject-fcu-unknown.input.json",
+      "name": "reject-fcu-unknown",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: FCU parameter \"MC_ROLL_P\" is outside its implemented PX4 range",
+      "input": "reject-fcu-out-of-range.input.json",
+      "name": "reject-fcu-out-of-range",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: FCU MPC_THR_MIN exceeds MPC_THR_MAX",
+      "input": "reject-fcu-inverted-thrust.input.json",
+      "name": "reject-fcu-inverted-thrust",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: slot \"px4-1\" requests px4.imageSimulationEnabled=true, but the xsim has no camera producer; set px4.imageSimulationEnabled=false or select the gazebo simulator",
+      "input": "reject-px4-camera.input.json",
+      "name": "reject-px4-camera",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: slot \"scout-1\" requests scout.lidarSimulationEnabled=true, but the xsim has no 2D /scan lidar producer; set scout.lidarSimulationEnabled=false or select the gazebo simulator",
+      "input": "reject-scout-scan.input.json",
+      "name": "reject-scout-scan",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: slot \"scout-1\" requests scout.imageSimulationEnabled=true, but the xsim has no camera/depth producer; set scout.imageSimulationEnabled=false or select the gazebo simulator",
+      "input": "reject-scout-camera.input.json",
+      "name": "reject-scout-camera",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: slot \"scout-1\" requests simulationSensors.simpleLidar.publishBeams=true, but penetrating has no rays; set false or choose raycast or depth_frustum",
+      "input": "reject-cpu-penetrating-beams.input.json",
+      "name": "reject-cpu-penetrating-beams",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: original GPU lidar_scan does not produce beams; set publishBeams=false",
+      "input": "reject-gpu-beams.input.json",
+      "name": "reject-gpu-beams",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: xsim runs centralized on this station; containerized robot deployments are not wired yet",
+      "input": "reject-containerized-deployment.input.json",
+      "name": "reject-containerized-deployment",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: robots are simulated only by xsim the Experiment world starts; turn on the simulated world start (autoStartGazeboServer)",
+      "input": "reject-without-world-simulation.input.json",
+      "name": "reject-without-world-simulation",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: trusted Session opening Run acceptance time is required",
+      "input": "reject-epoch-missing.input.json",
+      "name": "reject-epoch-missing",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "xsim Session epoch plus timing overflows int64 nanoseconds",
+      "input": "reject-epoch-plus-output-overflow.input.json",
+      "name": "reject-epoch-plus-output-overflow",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "simulation-retains-physical-hybrid-flags.expected-config.json",
+      "input": "simulation-retains-physical-hybrid-flags.input.json",
+      "name": "simulation-retains-physical-hybrid-flags",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: unsupported runMode \"unsupported\"",
+      "input": "reject-unsupported-run-mode.input.json",
+      "name": "reject-unsupported-run-mode",
+      "runMode": "unsupported"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: xsim runs centralized on this station, not on world target \"agent-world\"",
+      "input": "reject-remote-world.input.json",
+      "name": "reject-remote-world",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: slot \"rotor\" is PX4 model \"mocap_rotor\"; the xsim models FS150 only",
+      "input": "reject-mocap-rotor-model.input.json",
+      "name": "reject-mocap-rotor-model",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: slot \"board\" runs its simulation on \"board-3\" (onboard setup); the xsim is centralized only",
+      "input": "reject-onboard-fs150.input.json",
+      "name": "reject-onboard-fs150",
+      "runMode": "simulation"
+    },
+    {
+      "expectedNoWorld": true,
+      "input": "no-world-physical-only-hybrid.input.json",
+      "name": "no-world-physical-only-hybrid",
+      "runMode": "hybrid"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene fcuParameters must be a numeric object",
+      "input": "reject-fcu-array.input.json",
+      "name": "reject-fcu-array",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: FCU parameter \"MC_ROLL_P\" must be a number",
+      "input": "reject-fcu-string-gain.input.json",
+      "name": "reject-fcu-string-gain",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: FCU parameter \"MC_ROLL_P\" must be a number",
+      "input": "reject-fcu-null-gain.input.json",
+      "name": "reject-fcu-null-gain",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: FCU parameter \"MC_AIRMODE\" is outside its implemented PX4 range",
+      "input": "reject-fcu-fractional-airmode.input.json",
+      "name": "reject-fcu-fractional-airmode",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: FCU parameter \"THR_MDL_FAC\" is outside its implemented PX4 range",
+      "input": "reject-fcu-thrust-factor-over.input.json",
+      "name": "reject-fcu-thrust-factor-over",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: FCU parameter \"MC_ROLL_P\" is outside its implemented PX4 range",
+      "input": "reject-fcu-negative-roll.input.json",
+      "name": "reject-fcu-negative-roll",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: duplicate object key \"MC_ROLL_P\"",
+      "input": "reject-fcu-duplicate-gain.input.json",
+      "name": "reject-fcu-duplicate-gain",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: unsupported FCU parameter \"MPC_USE_HTE\"",
+      "input": "reject-fcu-unsupported-controller.input.json",
+      "name": "reject-fcu-unsupported-controller",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene parameter \"outputPeriodMs\" must be a whole number of milliseconds",
+      "input": "reject-zero-output.input.json",
+      "name": "reject-zero-output",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene parameter \"commandPollMs\" must be a whole number of milliseconds",
+      "input": "reject-negative-poll.input.json",
+      "name": "reject-negative-poll",
+      "runMode": "simulation"
+    },
+    {
+      "expectedError": "configuration: invalid input: scene \"yard\" with the xsim simulator: scene parameter \"outputPeriodMs\" must be a whole number of milliseconds",
+      "input": "reject-output-ns-overflow.input.json",
+      "name": "reject-output-ns-overflow",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "fcu-explicit-integer-and-thrust-values.expected-config.json",
+      "input": "fcu-explicit-integer-and-thrust-values.input.json",
+      "name": "fcu-explicit-integer-and-thrust-values",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "bridge-explicit-rate-20.expected-config.json",
+      "input": "bridge-explicit-rate-20.input.json",
+      "name": "bridge-explicit-rate-20",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "gpu-zju-explicit-fov-grid.expected-config.json",
+      "input": "gpu-zju-explicit-fov-grid.input.json",
+      "name": "gpu-zju-explicit-fov-grid",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "private-map-is-not-reference.expected-config.json",
+      "input": "private-map-is-not-reference.input.json",
+      "name": "private-map-is-not-reference",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "reference-wrong-role.expected-config.json",
+      "input": "reference-wrong-role.input.json",
+      "name": "reference-wrong-role",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "reference-hidden.expected-config.json",
+      "input": "reference-hidden.input.json",
+      "name": "reference-hidden",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "reference-visible-ar.expected-config.json",
+      "input": "reference-visible-ar.input.json",
+      "name": "reference-visible-ar",
+      "runMode": "simulation"
+    },
+    {
+      "expectedConfig": "reference-malformed-preset-skipped.expected-config.json",
+      "input": "reference-malformed-preset-skipped.input.json",
+      "name": "reference-malformed-preset-skipped",
+      "runMode": "simulation"
+    }
+  ]
+}

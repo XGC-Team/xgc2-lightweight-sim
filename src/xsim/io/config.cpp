@@ -71,7 +71,7 @@ Config parse_entity(const Json &j) {
         throw std::invalid_argument("UGV ROS configuration is not supported: " + std::string(key));
   return c;
 }
-Json load_config(const std::string &path, const std::string &scene_file) {
+Json load_json_object(const std::string &path) {
   constexpr std::size_t limit = 1024 * 1024;
   struct File {
     int fd;
@@ -104,6 +104,9 @@ Json load_config(const std::string &path, const std::string &scene_file) {
   };
   Json j = Json::parse(contents, unique_keys);
   if (!j.is_object()) throw std::invalid_argument("configuration must be one JSON object");
+  return j;
+}
+Json resolve_scene_file(Json j, const std::string &scene_file) {
   if (!scene_file.empty()) {
     const auto configured = j.value("scene_file", std::string{});
     if (!configured.empty() && configured != scene_file)
@@ -113,5 +116,8 @@ Json load_config(const std::string &path, const std::string &scene_file) {
   if(j.contains("scene_file") && !j.at("scene_file").get<std::string>().empty())
     j["scene"]["document"]=yaml_json(YAML::LoadFile(j.at("scene_file").get<std::string>()));
   return j;
+}
+Json load_config(const std::string &path, const std::string &scene_file) {
+ return resolve_scene_file(load_json_object(path), scene_file);
 }
 } // namespace xsim

@@ -1,0 +1,100 @@
+{
+  "entities": [
+    {
+      "kind": "scout",
+      "name": "ugv1",
+      "position": [
+        1,
+        2,
+        0.18
+      ],
+      "ros": {
+        "localization_pose_topic": "/custom/scout_1/pose",
+        "localization_twist_topic": "/custom/scout_1/twist",
+        "mocap_noise": [
+          1e-7,
+          1e-7,
+          1e-7
+        ],
+        "mocap_seed": 692787960
+      },
+      "yaw": 0.5
+    },
+    {
+      "fcu_parameters": {
+        "MC_ROLL_P": 6.2,
+        "MC_YAW_WEIGHT": 0.4
+      },
+      "kind": "fs150",
+      "name": "uav1",
+      "position": [
+        -1,
+        0,
+        0
+      ],
+      "ros": {
+        "localization_pose_topic": "/custom/px4_1/pose",
+        "localization_twist_topic": "/custom/px4_1/twist",
+        "mocap_noise": [
+          1e-7,
+          1e-7,
+          1e-7
+        ],
+        "mocap_seed": 664647194
+      },
+      "yaw": 0
+    },
+    {
+      "fcu_parameters": {
+        "MC_ROLL_P": 6.2,
+        "MC_YAW_WEIGHT": 0.4
+      },
+      "kind": "fs150",
+      "name": "uav2",
+      "position": [
+        -2,
+        0,
+        0
+      ],
+      "ros": {
+        "localization_pose_topic": "/custom/px4_2/pose",
+        "localization_twist_topic": "/custom/px4_2/twist",
+        "mocap_noise": [
+          1e-7,
+          1e-7,
+          1e-7
+        ],
+        "mocap_seed": 647869575
+      },
+      "yaw": 0
+    },
+    {
+      "kind": "mecanum",
+      "name": "mecanum1",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "ros": {
+        "localization_pose_topic": "/custom/mecanum_1/pose",
+        "localization_twist_topic": "/custom/mecanum_1/twist",
+        "mocap_noise": [
+          1e-7,
+          1e-7,
+          1e-7
+        ],
+        "mocap_seed": 1866272892
+      },
+      "yaw": 0
+    }
+  ],
+  "epoch_ns": 1791271800123456789,
+  "input_poll_ns": 4000000,
+  "instance_id": "run-light-1",
+  "model_step_ns": 3000000,
+  "output_period_ns": 20000000,
+  "publish_clock": true,
+  "reference_cloud_topic": "/xgc/scene/reference_cloud",
+  "scene": {}
+}

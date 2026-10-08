@@ -39,7 +39,9 @@ ROS_MASTER_URI=http://127.0.0.1:PRIVATE_PORT \
   /private/install/bin/xsim --config /private/world.json --socket /private/world.sock
 ```
 
-`--config` 和 `--socket` 均为必填参数。ROS 构建的节点名为 `/xsim`。监督者负责配置、ROS master 和时间域选择、socket 父目录、进程启动、重启与崩溃恢复。
+`--socket` 必填，`--config` 与 `--experiment-file` 必须且只能选择一个。ROS 构建的节点名为 `/xsim`。监督者负责冻结输入、ROS master 和时间域选择、进程启动、重启与崩溃恢复。
+
+`--experiment-file` 使用公开冻结输入 `{instanceId:string, epochNs:string, robots:array, context:object, settings:object}`。`robots` 原样来自 `asset.experiment-robots@4`，同时保留 `authoredSimulationSensors` 的零值和字段存在性；既有 `simulationSensors` Runtime 默认值不会用于原生世界投影。`context.openingRunId` 和 `context.openingAcceptedAtEpochNs` 必须分别与 `instanceId`、`epochNs` 一致，纳秒为正的 int64 十进制字符串。`containerizedDeployment:false` 和 Core placement 必須明确存在；历史上下文缺少这些事实时不能补猜。`context.visualizationTopics` 按原 preset 顺序保存其声明数组，原生产品解释 reference-cloud 语义，不带其它 Action Inputs。产品据冻结场景参数、原始 roster 和 `settings.autoStartGazeboServer` 解析模型、时序、FCU、FNV 噪声 seed 与传感器，并拒绝未实现组合。它不回读可变资产，不用进程启动时钟替代 Session 时间。两种输入入口共用有界、拒绝重复键和符号链接的文件读取器，并同样接受可空的 `--scene-file`。
 
 | 世界键 | 默认值 / 要求 | 含义 |
 |---|---|---|
@@ -68,7 +70,7 @@ Pause 冻结时钟；Resume 仅在 paused 转为 running 时重置墙钟锚点�
 
 `publish_clock=true` 时，监督者必须保证该 ROS 图内只有一个 `/clock` 发布者，并为消费者一致设置 `/use_sim_time`。`/clock` 属于 ROS IO，在任何机器人 Provider 启用前即可发布；无 ROS 构建仍保留世界整数时钟。
 
-Unix socket 权限为 `0600`，父目录须已存在。已有 socket 路径会使启动失败，不会被隐式删除。SIGINT/SIGTERM 触发各自线程退出并 join、关闭 ROS 和客户端连接，只删除服务器自身创建的 socket。崩溃后确认并清理残留 socket 由监督者负责。
+Unix socket 权限为 `0600`；缺失父目录由服务器以 `0700` 创建，既有父目录权限不被改写。已有 socket 路径会使启动失败，不会被隐式删除。SIGINT/SIGTERM 触发各自线程退出并 join、关闭 ROS 和客户端连接，只删除服务器自身创建的 socket。崩溃后确认并清理残留 socket 由监督者负责。
 
 ## 机器人配置与生命周期
 

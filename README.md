@@ -21,7 +21,9 @@ source /opt/ros/noetic/setup.bash
 xsim --config /path/to/world.json --socket /path/to/world.sock
 ```
 
-以 [config/example.json](config/example.json) 为配置起点，填入唯一 `instance_id` 和会话时间域的正整数 `epoch_ns`；socket 父目录需已存在。示例世界初始暂停，实体初始 Provider 禁用。通过 RPC 启动对应 Provider，并恢复世界后运行。
+以 [config/example.json](config/example.json) 为配置起点，填入唯一 `instance_id` 和会话时间域的正整数 `epoch_ns`；socket 的缺失父目录由服务器以 `0700` 创建，socket 本身为 `0600`；已有路径不会被删除。示例世界初始暂停，实体初始 Provider 禁用。通过 RPC 启动对应 Provider，并恢复世界后运行。
+
+工作流也可用 `xsim --experiment-file /private/experiment.json --socket /private/world.sock [--scene-file /private/scene.yaml]`。`--experiment-file` 与 `--config` 互斥；它接收冻结的 `{instanceId, epochNs, robots, context, settings}`，其中 `epochNs` 是精确十进制字符串。机器人为 `asset.experiment-robots@4` 的公开输出，`context` 含原 Session 的 opening 身份/接受时间、明确部署事实和分组可视化声明；`settings` 保留原工作流输入。模型、传感器、时序和 seed 在原生产品内解释，不读取当前资产或系统时间补齐缺失事实；原始 `authoredSimulationSensors` 必须存在。`--scene-file` 仍复用原场景 YAML 解析器。
 
 默认世界调度 500 Hz（2 ms），整群共享墙钟实测 dt，时间为 `epoch_ns + Σ实际 dt`。短时落后限量追赶，持续过载平滑增大周期，默认上限 10 ms；空闲时阻塞等待。快照周期 8 ms，公共定位默认 125 Hz，IMU/local 默认 30 Hz，遥测频率可通过 RPC 调整；点云默认 10 Hz、独立降频。Pause 保持管理接口可用，Step 在暂停中按名义步长推进指定步数，Reset 保持会话时钟与 Provider 启用状态。
 

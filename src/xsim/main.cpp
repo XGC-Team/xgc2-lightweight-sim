@@ -18,17 +18,18 @@ struct RosShutdown {
 } // namespace
 int main(int argc, char **argv) {
   try {
-    std::string config_path, socket, scene_file;
-    bool has_config = false, has_socket = false, has_scene = false;
+    std::string config_path, experiment_path, socket, scene_file;
+    bool has_config = false, has_experiment = false, has_socket = false, has_scene = false;
     for (int i = 1; i < argc; ++i) {
       std::string arg = argv[i];
       if (arg == "--help") {
-        std::cout << "xsim --config WORLD.json --socket /private/world.sock [--scene-file SCENE.yaml]\n";
+        std::cout << "xsim (--config WORLD.json | --experiment-file EXPERIMENT.json) --socket /private/world.sock [--scene-file SCENE.yaml]\n";
         return 0;
       }
       std::string *value = nullptr;
       bool *present = nullptr;
       if (arg == "--config") { value = &config_path; present = &has_config; }
+      else if (arg == "--experiment-file") { value = &experiment_path; present = &has_experiment; }
       else if (arg == "--socket") { value = &socket; present = &has_socket; }
       else if (arg == "--scene-file") { value = &scene_file; present = &has_scene; }
       else throw std::invalid_argument("unknown argument: " + arg);
@@ -38,9 +39,9 @@ int main(int argc, char **argv) {
       *present = true;
       *value = argv[++i];
     }
-    if (config_path.empty() || socket.empty())
-      throw std::invalid_argument("--config and --socket required");
-    const auto config = xsim::load_config(config_path, scene_file);
+    if (has_config == has_experiment || socket.empty() || (has_config && config_path.empty()) || (has_experiment && experiment_path.empty()))
+      throw std::invalid_argument("exactly one of --config or --experiment-file and --socket required");
+    const auto config = has_experiment ? xsim::load_experiment_config(experiment_path, scene_file) : xsim::load_config(config_path, scene_file);
     const auto &epoch = config.at("epoch_ns");
     if (!epoch.is_number_integer() ||
         (epoch.is_number_unsigned() && epoch.get<uint64_t>() > uint64_t(std::numeric_limits<int64_t>::max())))

@@ -125,10 +125,32 @@ def main(binary):
             if process.poll() is None:
                 process.kill()
                 process.communicate(timeout=5)
+        socket_path.unlink()  # prior replacement-fence fixture owns this foreign socket
+        # The independent product compiles a frozen public Experiment envelope
+        # through the same bounded reader before owning any socket/ROS effects.
+        experiment = root / "experiment.json"
+        fixture = Path(__file__).parent / "experiment-fixtures" / "empty-world.input.json"
+        bootstrap = json.loads(fixture.read_text())
+        bootstrap["epochNs"] = str(original["epoch_ns"])
+        bootstrap["context"]["openingAcceptedAtEpochNs"] = bootstrap["epochNs"]
+        experiment.write_text(json.dumps(bootstrap))
+        experiment_command = [binary, "--experiment-file", str(experiment), "--socket", str(socket_path)]
+        rejected(experiment_command + ["--config", str(config)], "exactly one")
+        rejected(experiment_command + ["--experiment-file", str(experiment)], "more than once")
+        rejected([binary, "--experiment-file", "--socket", str(socket_path)], "missing value")
+        for invalid in ['{"instanceId":"one","instanceId":"two"}', '{} {}']:
+            experiment.write_text(invalid)
+            rejected(experiment_command, "configuration" if "instanceId" in invalid else "parse")
+        experiment.write_text(json.dumps(bootstrap))
+        process = start(experiment_command + ["--scene-file", str(scene)])
+        process.terminate()
+        _, stderr = process.communicate(timeout=5)
+        assert process.returncode == 0, stderr
+        assert not socket_path.exists(), "experiment-file shutdown leaked owned socket"
         print(json.dumps({"ok": True, "emptySceneFlag": True, "validSceneFlagAndConfig": True,
                           "sceneConflictRefused": True,
                           "invalidSceneUsesOriginalParser": True, "frozenEpochUnchanged": True,
-                          "privateParents": True, "foreignSocketAndReplacementPreserved": True}))
+                          "experimentFile": True, "privateParents": True, "foreignSocketAndReplacementPreserved": True}))
 
 
 if __name__ == "__main__":
