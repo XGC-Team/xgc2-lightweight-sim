@@ -158,8 +158,8 @@ def main():
             path = "/v1/entities/frozen-id.alpha"
             generation = {"generation": entity_ref["generation"]}
             mutation("POST", path + "/state", {**generation, "state": {"enabled": True}})
-            mutation("POST", "/v1/world/step", {"steps": 40})
-            moved = state("frozen-id.alpha")
+            step = mutation("POST", "/v1/world/step", {"steps": 40})
+            moved = result_entity(step, "frozen-id.alpha")["state"]
             assert moved["pose"]["position"][2] < 3, moved
             before_toggle = copy.deepcopy(moved["pose"])
             disabled = mutation("POST", path + "/state", {**generation, "state": {"enabled": False}})
