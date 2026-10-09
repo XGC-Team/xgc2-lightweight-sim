@@ -10,6 +10,7 @@
 #include <ros/ros.h>
 #endif
 #include <csignal>
+#include <array>
 #include <iostream>
 #include <limits>
 extern char **environ;
@@ -23,6 +24,20 @@ xgc2::xrpc::DirectoryGrant allocated_directory(const std::string &path, xgc2::xr
   if (fd.value < 0) throw std::invalid_argument("native directory allocation is unavailable");
   return xgc2::xrpc::DirectoryGrant::from_owned_directory(fd.value, purpose);
 }
+xsim::Json experiment_stdin() {
+  constexpr size_t limit = 8u << 20;
+  std::string bytes;
+  std::array<char, 8192> chunk{};
+  while (std::cin.read(chunk.data(), chunk.size()) || std::cin.gcount() != 0) {
+    const auto count = static_cast<size_t>(std::cin.gcount());
+    if (count > limit - bytes.size()) throw std::invalid_argument("Experiment stdin exceeds 8 MiB");
+    bytes.append(chunk.data(), count);
+  }
+  if (!std::cin.eof()) throw std::invalid_argument("Experiment stdin read failed");
+  auto value = xsim::Json::parse(bytes);
+  if (!value.is_object()) throw std::invalid_argument("Experiment stdin must be one object");
+  return value;
+}
 volatile sig_atomic_t stopping = 0;
 void signal_stop(int) { stopping = 1; }
 #ifdef XSIM_ROS
@@ -34,12 +49,18 @@ struct RosShutdown {
 int main(int argc, char **argv) {
   try {
     std::string config_path, experiment_path, manifest_path, bootstrap_path, socket, scene_file;
+    bool has_experiment_stdin = false;
     bool has_config = false, has_experiment = false, has_manifest = false, has_bootstrap = false, has_socket = false, has_scene = false;
     for (int i = 1; i < argc; ++i) {
       std::string arg = argv[i];
       if (arg == "--help") {
-        std::cout << "xsim --bootstrap-input BOOTSTRAP.json (--config WORLD.json | --experiment-file EXPERIMENT.json | --manifest MANIFEST.json) [--scene-file SCENE.yaml]\n";
+        std::cout << "xsim --bootstrap-input BOOTSTRAP.json (--config WORLD.json | --experiment-file EXPERIMENT.json | --experiment-stdin | --manifest MANIFEST.json) [--scene-file SCENE.yaml]\n";
         return 0;
+      }
+      if (arg == "--experiment-stdin") {
+        if (has_experiment_stdin) throw std::invalid_argument("argument occurs more than once: " + arg);
+        has_experiment_stdin = true;
+        continue;
       }
       std::string *value = nullptr;
       bool *present = nullptr;
@@ -56,7 +77,7 @@ int main(int argc, char **argv) {
       *present = true;
       *value = argv[++i];
     }
-    if (bootstrap_path.empty() || int(has_config) + int(has_experiment) + int(has_manifest) != 1 ||
+    if (bootstrap_path.empty() || int(has_config) + int(has_experiment) + int(has_manifest) + int(has_experiment_stdin) != 1 ||
         (has_config && config_path.empty()) || (has_experiment && experiment_path.empty()) ||
         (has_manifest && manifest_path.empty()))
       throw std::invalid_argument("--bootstrap-input and exactly one native world input are required");
@@ -86,8 +107,8 @@ int main(int argc, char **argv) {
     }
     rpc.limits = xgc2::xrpc::http_limits(xgc2::xrpc::resolve_runtime_policy(policy_options));
     xsim::Json config;
-    if (has_experiment) {
-      const auto frozen = xsim::load_json_object(experiment_path);
+    if (has_experiment || has_experiment_stdin) {
+      const auto frozen = has_experiment_stdin ? experiment_stdin() : xsim::load_json_object(experiment_path);
       config = xsim::resolve_scene_file(xsim::experiment_config(frozen), scene_file);
       rpc.robot_bindings = xsim::experiment_robot_bindings(frozen);
       rpc.frozen_experiment = true;
@@ -116,6 +137,7 @@ int main(int argc, char **argv) {
     });
     ros::init(argc, argv, "xsim", ros::init_options::NoSigintHandler);
     RosShutdown ros_shutdown;
+    ros::param::set("/use_sim_time", true);
 #else
     if (!binding.storage_grants().empty())
       throw std::invalid_argument("headless xsim has no storage allocations");
