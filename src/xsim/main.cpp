@@ -34,9 +34,7 @@ xsim::Json experiment_stdin() {
     bytes.append(chunk.data(), count);
   }
   if (!std::cin.eof()) throw std::invalid_argument("Experiment stdin read failed");
-  auto value = xsim::Json::parse(bytes);
-  if (!value.is_object()) throw std::invalid_argument("Experiment stdin must be one object");
-  return value;
+  return xsim::parse_json_object(bytes);
 }
 volatile sig_atomic_t stopping = 0;
 void signal_stop(int) { stopping = 1; }

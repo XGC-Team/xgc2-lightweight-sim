@@ -132,7 +132,16 @@ def main():
             assert call("GET", "/v1/world", bound=False)[0] == 409
             assert call("GET", "/status")[0] == 404
             assert call("POST", "/v1/health/observe", {"after_revision": 0})[1]["state"] == "ready"
-            assert call("POST", "/v1/health/observe", {"after_revision": health["revision"]}, timeout_ms=40)[0] == 504
+            # The shared HTTP host cancels an admitted held reply by closing
+            # its transport at the caller deadline; pre-admission expiry may
+            # instead return the explicit deadline response.
+            before_timeout = time.monotonic()
+            try:
+                assert call("POST", "/v1/health/observe", {"after_revision": health["revision"]}, timeout_ms=40)[0] == 504
+            except http.client.RemoteDisconnected:
+                pass
+            assert time.monotonic() - before_timeout < 1
+            assert call("GET", "/v1/health")[1]["state"] == "ready"
             evidence["checks"].append("formal identity, declared bounds, real health and held observation deadline")
 
             create = {"entity": {"id": "frozen-id.alpha", "role": "robot",

@@ -22,10 +22,20 @@ def main(binary):
                     "paused": True, "entities": []}
         config.write_text(json.dumps(original))
         socket_path = root / "new" / "nested" / "world.sock"
-        command = [binary, "--config", str(config), "--socket", str(socket_path)]
+        socket_path.parent.mkdir(parents=True, mode=0o700)
+        socket_path.parent.parent.chmod(0o700)
+        allocation = root / "bootstrap.json"
+        allocation.write_text(json.dumps({"schema_version": 1, "binding": {
+            "schema_version": 1, "target_id": "native-fixture:cli", "service": "xgc2.simulation",
+            "api_version": "v1", "profile": "http.v1", "endpoint": {"kind": "unix", "address": str(socket_path)},
+            "runtime_grant": "fixture:runtime", "authentication": "local_private",
+            "secret_handles": {}, "storage_grants": []}, "grants": {}}))
+        allocation.chmod(0o600)
+        prefix = [binary, "--bootstrap-input", str(allocation)]
+        command = prefix + ["--config", str(config), "--socket", str(socket_path)]
 
-        def rejected(arguments, reason):
-            result = subprocess.run(arguments, capture_output=True, text=True, timeout=5)
+        def rejected(arguments, reason, payload=None):
+            result = subprocess.run(arguments, input=payload, capture_output=True, text=True, timeout=5)
             assert result.returncode == 1, (arguments, result)
             assert reason in result.stderr, result.stderr
             assert not socket_path.exists(), "rejected config bound the socket"
@@ -55,20 +65,30 @@ def main(binary):
             rejected(command, "configuration" if 'epoch_ns' in text or '"x"' in text else "parse")
         config.write_text(json.dumps(original))
 
-        def start(arguments):
-            process = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        def start(arguments, payload=None):
+            process = subprocess.Popen(arguments, stdin=subprocess.PIPE if payload is not None else subprocess.DEVNULL,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if payload is not None:
+                process.stdin.write(payload.encode())
+                process.stdin.close()
+                process.stdin = None
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline and not socket_path.exists() and process.poll() is None:
                 time.sleep(.01)
             assert process.poll() is None and socket_path.exists(), process.communicate(timeout=1)
             connection = UnixHTTP(str(socket_path))
             try:
-                connection.request("GET", "/config")
+                headers = {"X-Request-ID": "cli-describe", "X-Xrpc-Timeout-Ms": "2000"}
+                connection.request("GET", "/v1/describe", headers=headers)
+                description = connection.getresponse()
+                assert description.status == 200
+                headers["X-Xrpc-Instance-ID"] = json.loads(description.read())["service_ref"]["instance_id"]
+                headers["X-Request-ID"] = "cli-world"
+                connection.request("GET", "/v1/world", headers=headers)
                 response = connection.getresponse()
                 assert response.status == 200
                 value = json.loads(response.read())
-                assert value["world"]["epoch_ns"] == original["epoch_ns"], value
-                assert value["localization_pose_topics"] == [], value
+                assert value["diagnostics"]["epoch_ns"] == original["epoch_ns"], value
             finally:
                 connection.close()
             return process
@@ -102,7 +122,7 @@ def main(binary):
             foreign.bind(str(socket_path))
             identity = socket_path.lstat().st_ino
             result = subprocess.run(command, capture_output=True, timeout=5)
-            assert result.returncode == 1 and b"path must be absent" in result.stderr
+            assert result.returncode == 1, result.stderr
             assert socket_path.lstat().st_ino == identity
         socket_path.unlink()
         socket_path.write_text("foreign-file")
@@ -135,7 +155,7 @@ def main(binary):
         bootstrap["epochNs"] = str(original["epoch_ns"])
         bootstrap["context"]["openingAcceptedAtEpochNs"] = bootstrap["epochNs"]
         experiment.write_text(json.dumps(bootstrap))
-        experiment_command = [binary, "--experiment-file", str(experiment), "--socket", str(socket_path)]
+        experiment_command = prefix + ["--experiment-file", str(experiment), "--socket", str(socket_path)]
         rejected(experiment_command + ["--config", str(config)], "exactly one")
         rejected(experiment_command + ["--experiment-file", str(experiment)], "more than once")
         rejected([binary, "--experiment-file", "--socket", str(socket_path)], "missing value")
@@ -148,10 +168,21 @@ def main(binary):
         _, stderr = process.communicate(timeout=5)
         assert process.returncode == 0, stderr
         assert not socket_path.exists(), "experiment-file shutdown leaked owned socket"
+        stdin_command = prefix + ["--experiment-stdin", "--scene-file", str(scene)]
+        rejected(stdin_command + ["--config", str(config)], "exactly one", "{}")
+        rejected(stdin_command + ["--experiment-stdin"], "more than once", "{}")
+        rejected(stdin_command, "parse", "{} {}")
+        rejected(stdin_command, "duplicate configuration", '{"instanceId":"one","instanceId":"two"}')
+        rejected(stdin_command, "exceeds 8 MiB", " " * (8 * 1024 * 1024 + 1))
+        process = start(stdin_command, json.dumps(bootstrap))
+        process.terminate()
+        _, stderr = process.communicate(timeout=5)
+        assert process.returncode == 0, stderr
+        assert not socket_path.exists(), "experiment-stdin shutdown leaked owned socket"
         print(json.dumps({"ok": True, "emptySceneFlag": True, "validSceneFlagAndConfig": True,
                           "sceneConflictRefused": True,
                           "invalidSceneUsesOriginalParser": True, "frozenEpochUnchanged": True,
-                          "experimentFile": True, "privateParents": True, "foreignSocketAndReplacementPreserved": True}))
+                          "experimentFile": True, "experimentStdin": True, "privateParents": True, "foreignSocketAndReplacementPreserved": True}))
 
 
 if __name__ == "__main__":

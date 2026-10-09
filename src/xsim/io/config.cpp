@@ -93,6 +93,9 @@ Json load_json_object(const std::string &path) {
     contents.append(buffer, static_cast<std::size_t>(count));
     if (contents.size() > limit) throw std::invalid_argument("configuration exceeds 1 MiB");
   }
+  return parse_json_object(contents);
+}
+Json parse_json_object(const std::string &contents) {
   std::vector<std::set<std::string>> object_keys;
   const auto unique_keys = [&object_keys](int, Json::parse_event_t event, Json &value) {
     if (event == Json::parse_event_t::object_start) object_keys.emplace_back();

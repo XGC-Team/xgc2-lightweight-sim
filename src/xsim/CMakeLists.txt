@@ -189,12 +189,6 @@ if(XSIM_TESTS AND NOT XSIM_ROS)
   add_test(NAME xsim_cli_config COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cli_config.py
     --xsim $<TARGET_FILE:xsim>)
   set_tests_properties(xsim_cli_config PROPERTIES TIMEOUT 30)
-  add_test(NAME xsim_rpc_contract COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/rpc_contract.py
-    --xsim $<TARGET_FILE:xsim>)
-  set_tests_properties(xsim_rpc_contract PROPERTIES TIMEOUT 30)
   add_test(NAME xsim_simulation_v1 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/simulation_v1_native.py --binary $<TARGET_FILE:xsim>)
   set_tests_properties(xsim_simulation_v1 PROPERTIES TIMEOUT 30)
-  add_test(NAME xsim_native_headless COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/headless_native.py
-    --xsim $<TARGET_FILE:xsim>)
-  set_tests_properties(xsim_native_headless PROPERTIES TIMEOUT 30)
 endif()

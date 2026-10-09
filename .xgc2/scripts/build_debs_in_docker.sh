@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-image="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.4@sha256:37f273f6d63c58ff90bf781b7684c7a034cbaf5054165861e3dd0928f2559f31}"
+image="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a}"
 work="${WORK_DIR:-$root/.work/docker}";out="${OUTPUT_DIR:-$root/debs}";sensor="${XSIM_SENSOR_SOURCE_ROOT:-}"
 native_contracts=false
 while [[ $# -gt 0 ]]; do
@@ -54,9 +54,9 @@ curl -fsSL https://xgc2.apt.xiaokang.ink/xgc2-archive-keyring.gpg -o /etc/apt/ke
 gpg --batch --show-keys --with-colons /etc/apt/keyrings/xgc2-archive-keyring.gpg | awk -F: '$1=="fpr"{print $10}' | grep -Fxq 2A8E11B36F56D307ADF626D85E5FDC30979EA43F
 echo "deb [signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] https://xgc2.apt.xiaokang.ink focal main" >/etc/apt/sources.list.d/xgc2.list
 if [[ -n "${XGC2_APT_OVERLAY_URL:-}" && "${XGC2_DEPENDENCY_SET_DIGEST}" != 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945 ]]; then
-  echo "deb [signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] ${XGC2_APT_OVERLAY_URL%/} focal main" >/etc/apt/sources.list.d/00-xgc2-release-train.list
+  echo "deb [signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg] ${XGC2_APT_OVERLAY_URL%/} focal main" >>/etc/apt/sources.list.d/xgc2.list
 fi
-apt-get update
+apt-get update -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/xgc2.list -o Dir::Etc::sourceparts=-
 apt-get install -y --no-install-recommends libxgc2-math-dev libxgc2-robotics-interfaces-dev libxgc2-xrpc-dev
 python3 /source/.xgc2/scripts/check_build_inputs.py
 if [[ "$XSIM_NATIVE_CONTRACTS" == true ]]; then
