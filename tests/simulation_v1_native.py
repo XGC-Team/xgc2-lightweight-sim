@@ -192,8 +192,15 @@ def main():
             guard_create["entity"]["asset"]["realization"]["content"] = {"kind": "scout", "name": "guard_model"}
             guard = mutation("POST", "/v1/entities", guard_create)
             guard_ref = result_entity(guard, "guard-beta")["ref"]
-            mutation("POST", "/v1/world/step", {"steps": 20})
-            before_invalid_reset = state("frozen-id.alpha")
+            step = mutation("POST", "/v1/world/step", {"steps": 20})
+            before_invalid_reset = result_entity(step, "frozen-id.alpha")["state"]
+            # GET observes the native output frame, delivered separately from
+            # the operation receipt. Establish the completed step's baseline
+            # before checking that a rejected reset has no effects.
+            deadline = time.monotonic() + 1
+            while state("frozen-id.alpha") != before_invalid_reset and time.monotonic() < deadline:
+                time.sleep(.001)
+            assert state("frozen-id.alpha") == before_invalid_reset
             bad_reset = {"scope": "entities", "entities": [entity_ref, {"id": guard_ref["id"], "generation": guard_ref["generation"] + 1}],
                          "reset_time": False, "operation_timeout_ms": 3000}
             assert call("POST", "/v1/world/reset", bad_reset, "atomic-reset")[0] == 409
