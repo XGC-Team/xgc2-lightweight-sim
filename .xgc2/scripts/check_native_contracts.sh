@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# == 2 ]] || { echo 'usage: check_native_contracts.sh CONVEX_GEOMETRY_SOURCE FS150_ASSET_SOURCE' >&2; exit 2; }
+[[ $# == 2 ]] || { echo 'usage: check_native_contracts.sh SCENE_SOURCE FS150_ASSET_SOURCE' >&2; exit 2; }
 sim_source="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-geometry_source="$(realpath "$1")"
+scene_source="$(realpath "$1")"
 fs150_source="$(realpath "$2")"
-[[ -f "$geometry_source/xgc2_world_lidar/library/CMakeLists.txt" && -f "$fs150_source/scripts/generate_native_flight_model.py" ]] || { echo 'the owning geometry and FS150 sources are required' >&2; exit 2; }
+[[ -f "$scene_source/sensors/xgc2_world_lidar/library/CMakeLists.txt" && -f "$fs150_source/scripts/generate_native_flight_model.py" ]] || { echo 'the owning scene and FS150 sources are required' >&2; exit 2; }
 native_build="$(mktemp -d /tmp/xgc2-xsim-native.XXXXXX)"
 trap 'rm -rf -- "$native_build"' EXIT
 native_prefix="${CMAKE_PREFIX_PATH:-}"
 
 # A private CPU-only dependency prefix keeps this check separate from the ROS/GPU package.
-cmake -S "$geometry_source/xgc2_world_lidar/library" -B "$native_build/geometry" \
+cmake -S "$scene_source/sensors/xgc2_world_lidar/library" -B "$native_build/geometry" \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$native_build/install" \
   -DXGC_WORLD_LIDAR_GPU=OFF
 cmake --build "$native_build/geometry" --target world_lidar --parallel 2

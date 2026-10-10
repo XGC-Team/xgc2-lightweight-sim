@@ -19,7 +19,7 @@ fi
 if [[ -n "${XGC2_APT_OVERLAY_URL:-}" && -z "${XGC2_DEPENDENCY_SET_DIGEST:-}" ]]; then
   echo 'XGC2_APT_OVERLAY_URL requires XGC2_DEPENDENCY_SET_DIGEST' >&2; exit 2
 fi
-[[ -f "$sensor/xgc2_world_lidar/library/CMakeLists.txt" ]] || { echo 'an explicit owning convex_geometry source is required' >&2;exit 2; }
+[[ -f "$sensor/sensors/xgc2_world_lidar/library/CMakeLists.txt" ]] || { echo 'an explicit owning scene source is required' >&2;exit 2; }
 mkdir -p "$work" "$out"
 container_name="xgc2-xsim-build-$(date +%s)-$$"
 container_created=false

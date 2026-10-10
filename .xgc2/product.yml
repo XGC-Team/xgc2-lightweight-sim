@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xsim
 name: xsim
-version: 1.1.0-2
+version: 1.1.0-3
 kind: ros1-apt
 summary: Standalone ECS world with original FS150/Scout/Mecanum ROS interfaces and integrated CPU/GPU sensing.
 ros:
@@ -15,7 +15,7 @@ apt:
 usage:
   install: sudo apt install xsim
   smoke_test: /opt/xgc2/xsim/bin/xsim --help
-  notes: Source Noetic before direct CLI use. One frozen Experiment supplies the actual Session epoch; one explicit shared bootstrap supplies the private native RPC binding. GPU has no CPU fallback. The sensor implementation is built from the explicit convex_geometry checkout, never copied into this owner.
+  notes: Source Noetic before direct CLI use. One frozen Experiment supplies the actual Session epoch; one explicit shared bootstrap supplies the private native RPC binding. GPU has no CPU fallback. The sensor implementation is built from the explicit ros1/common/scene checkout, never copied into this owner.
 ownership:
   paths:
   - /opt/xgc2/xsim
@@ -30,4 +30,4 @@ release:
     libxgc2-math-dev: verify
     libxgc2-robotics-interfaces-dev: rebuild
   apt_versions:
-    focal: 1.1.0-2
+    focal: 1.1.0-3
