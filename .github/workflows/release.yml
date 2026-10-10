@@ -29,7 +29,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         repository: XGC-Team/xgc2-scene-generation
-        ref: 17ade048cf4fee07fe9f73048b9dcc30ba5ad5c0 # xgc2-scene-generation/noetic
+        ref: ee6e27d54d84a40bb42d7c7dd52b0cef3f4f76b9 # xgc2-scene-generation/noetic
         path: sensor-source
     - name: Check the requested release identity
       env:
