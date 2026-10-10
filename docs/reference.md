@@ -4,12 +4,12 @@
 
 ## 构建、安装与打包
 
-需要 C++17、CMake 3.16、Eigen3、nlohmann-json、yaml-cpp、Python3、已安装的 robotics interface headers、xgc2-math headers 和 FS150 SITL 资产。默认 `XSIM_ROS=ON` 还需要 ROS Noetic 的 `roscpp`、`geometry_msgs`、`sensor_msgs`、`nav_msgs`、`rosgraph_msgs`、`mavros_msgs`。先将传感器库 `scene/sensors/xgc2_world_lidar/library` 安装到选定前缀。
+需要 C++17、CMake 3.16、Eigen3、nlohmann-json、yaml-cpp、Python3、已安装的 robotics interface headers、xgc2-math headers 和 FS150 SITL 资产。默认 `XSIM_ROS=ON` 还需要 ROS Noetic 的 `roscpp`、`geometry_msgs`、`sensor_msgs`、`nav_msgs`、`rosgraph_msgs`、`mavros_msgs`。先将传感器库 `scene/sensors/world_lidar/library` 安装到选定前缀。
 
 以下命令在 xsim 仓根执行；将 `/private` 和源码占位路径替换为实际目录。
 
 ```sh
-cmake -S ../../common/scene/sensors/xgc2_world_lidar/library -B /private/lidar-build \
+cmake -S ../../common/scene/sensors/world_lidar/library -B /private/lidar-build \
   -DCMAKE_INSTALL_PREFIX=/private/install -DCMAKE_BUILD_TYPE=Release
 cmake --build /private/lidar-build -j1
 cmake --install /private/lidar-build

@@ -4,13 +4,13 @@ set -euo pipefail
 sim_source="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 scene_source="$(realpath "$1")"
 fs150_source="$(realpath "$2")"
-[[ -f "$scene_source/sensors/xgc2_world_lidar/library/CMakeLists.txt" && -f "$fs150_source/scripts/generate_native_flight_model.py" ]] || { echo 'the owning scene and FS150 sources are required' >&2; exit 2; }
+[[ -f "$scene_source/sensors/world_lidar/library/CMakeLists.txt" && -f "$fs150_source/scripts/generate_native_flight_model.py" ]] || { echo 'the owning scene and FS150 sources are required' >&2; exit 2; }
 native_build="$(mktemp -d /tmp/xgc2-xsim-native.XXXXXX)"
 trap 'rm -rf -- "$native_build"' EXIT
 native_prefix="${CMAKE_PREFIX_PATH:-}"
 
 # A private CPU-only dependency prefix keeps this check separate from the ROS/GPU package.
-cmake -S "$scene_source/sensors/xgc2_world_lidar/library" -B "$native_build/geometry" \
+cmake -S "$scene_source/sensors/world_lidar/library" -B "$native_build/geometry" \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$native_build/install" \
   -DXGC_WORLD_LIDAR_GPU=OFF
 cmake --build "$native_build/geometry" --target world_lidar --parallel 2

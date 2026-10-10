@@ -5,7 +5,7 @@ sim_source="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 scene_source="$(realpath "$1")"
 fs150_source="$(realpath "$2")"
 package_output="$(realpath -m "$3")"
-[[ -f "$sim_source/src/xsim/main.cpp" && -f "$scene_source/sensors/xgc2_world_lidar/library/CMakeLists.txt" && -f "$fs150_source/scripts/generate_native_flight_model.py" ]] || { echo 'the three owning sources are required' >&2; exit 2; }
+[[ -f "$sim_source/src/xsim/main.cpp" && -f "$scene_source/sensors/world_lidar/library/CMakeLists.txt" && -f "$fs150_source/scripts/generate_native_flight_model.py" ]] || { echo 'the three owning sources are required' >&2; exit 2; }
 build_cmake_prefix="${CMAKE_PREFIX_PATH:-}"
 set +u
 source /opt/ros/noetic/setup.bash
@@ -15,7 +15,7 @@ cmake_prefix_list="${CMAKE_PREFIX_PATH//:/;}"
 build_output="$(mktemp -d /tmp/xgc2-xsim-build.XXXXXX)"
 trap 'rm -rf -- "$build_output"' EXIT
 mkdir -p "$package_output" "$build_output/stage/DEBIAN"
-cmake -S "$scene_source/sensors/xgc2_world_lidar/library" -B "$build_output/geometry" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/xgc2/xsim -DXGC_WORLD_LIDAR_GPU=ON -DXGC_WORLD_LIDAR_METADATA_TEST=ON
+cmake -S "$scene_source/sensors/world_lidar/library" -B "$build_output/geometry" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/xgc2/xsim -DXGC_WORLD_LIDAR_GPU=ON -DXGC_WORLD_LIDAR_METADATA_TEST=ON
 cmake --build "$build_output/geometry" --parallel 2
 (cd "$build_output/geometry" && ctest --output-on-failure)
 DESTDIR="$build_output/stage" cmake --install "$build_output/geometry"

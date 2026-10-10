@@ -30,7 +30,7 @@ source /opt/ros/noetic/setup.bash
 sim=/source/ros1/simulator/xsim
 cmake -S /source/common/robotics-interfaces -B /work/robotics -DCMAKE_INSTALL_PREFIX=/work/install
 cmake --install /work/robotics
-cmake -S /source/ros1/common/scene/sensors/xgc2_world_lidar/library -B /work/lidar -DCMAKE_INSTALL_PREFIX=/work/install -DCMAKE_BUILD_TYPE=Release
+cmake -S /source/ros1/common/scene/sensors/world_lidar/library -B /work/lidar -DCMAKE_INSTALL_PREFIX=/work/install -DCMAKE_BUILD_TYPE=Release
 cmake --build /work/lidar -j1
 cmake --install /work/lidar
 cmake -S "$sim/src/xsim" -B /work/xsim \
