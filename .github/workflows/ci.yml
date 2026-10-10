@@ -19,7 +19,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         repository: XGC-Team/xgc2-scene-generation
-        ref: ee6e27d54d84a40bb42d7c7dd52b0cef3f4f76b9 # xgc2-scene-generation/noetic
+        ref: 2940a99abba225e718eed5fb892faac2f5ebaf5c # xgc2-scene-generation/noetic
         path: sensor-source
     - name: Check no-ROS native contracts and build the installable server
       run: .xgc2/scripts/build_debs_in_docker.sh --sensor-source "$GITHUB_WORKSPACE/sensor-source" --output-dir "$GITHUB_WORKSPACE/debs" --native-contracts
